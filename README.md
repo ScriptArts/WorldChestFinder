@@ -46,7 +46,7 @@ npm run package
 4. スロットをクリックして Item ID / Count を編集
 5. **保存** — 変更を `.mca` に書き込み
 
-初回起動時に **Amulet Editor と同様** Mojang からバニラ resource pack（client.jar の assets）を自動ダウンロードします。
+初回起動時に resource pack（client.jar の assets）を自動ダウンロードします。
 
 - ワールドに `resources.zip` がある場合はスキャン時に自動展開し、バニラより優先してテクスチャ解決します
 - ダウンロード失敗時は **Fallback .minecraft** で `.minecraft` フォルダを指定できます
