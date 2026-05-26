@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { MinecraftIds } from '../../../../shared/minecraftIds'
 import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -90,7 +91,7 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     activeTargetRef.current = { containerId: container.id, slot }
     const existing = container.items.find((entry) => entry.slot === slot)
 
-    let nextRaw: Record<string, unknown> = { Slot: slot, id: 'minecraft:air', count: 0 }
+    let nextRaw: Record<string, unknown> = { Slot: slot, id: MinecraftIds.ITEM_AIR, count: 0 }
     if (existing !== undefined) {
       nextRaw = existing.raw
     }

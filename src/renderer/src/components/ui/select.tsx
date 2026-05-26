@@ -23,11 +23,19 @@ function SelectTrigger({
 }: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
   size?: 'sm' | 'default'
 }): JSX.Element {
+  let sizeClass: string
+  // 指定されたサイズに応じてトリガーの高さを切り替える
+  if (size === 'default') {
+    sizeClass = 'h-9'
+  } else {
+    sizeClass = 'h-8'
+  }
+
   return (
     <SelectPrimitive.Trigger
       className={cn(
         'flex w-full items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 py-2 text-sm whitespace-nowrap shadow-sm transition-colors focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 data-[placeholder]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*="size-"])]:size-4',
-        size === 'default' ? 'h-9' : 'h-8',
+        sizeClass,
         className
       )}
       {...props}
@@ -46,13 +54,28 @@ function SelectContent({
   position = 'popper',
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>): JSX.Element {
+  let popperClass: string | false
+  // popper 配置の場合だけ位置補正クラスを追加する
+  if (position === 'popper') {
+    popperClass = 'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1'
+  } else {
+    popperClass = false
+  }
+
+  let viewportClass: string | false
+  // popper 配置の場合だけトリガー幅に合わせる viewport クラスを追加する
+  if (position === 'popper') {
+    viewportClass = 'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1'
+  } else {
+    viewportClass = false
+  }
+
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
         className={cn(
           'relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2',
-          position === 'popper' &&
-            'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
+          popperClass,
           className
         )}
         position={position}
@@ -62,7 +85,7 @@ function SelectContent({
         <SelectPrimitive.Viewport
           className={cn(
             'p-1',
-            position === 'popper' && 'h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)] scroll-my-1'
+            viewportClass
           )}
         >
           {children}

@@ -1,20 +1,21 @@
+import { MinecraftIds } from '../../../../shared/minecraftIds'
 import type { ContainerRecord } from '../../../../shared/types'
 
 const CONTAINER_TITLES: Record<string, string> = {
-  'minecraft:chest': 'Chest',
-  'minecraft:trapped_chest': 'Trapped Chest',
-  'minecraft:barrel': 'Barrel',
-  'minecraft:hopper': 'Hopper',
-  'minecraft:dispenser': 'Dispenser',
-  'minecraft:dropper': 'Dropper',
-  'minecraft:furnace': 'Furnace',
-  'minecraft:blast_furnace': 'Blast Furnace',
-  'minecraft:smoker': 'Smoker',
-  'minecraft:brewing_stand': 'Brewing Stand',
-  'minecraft:shulker_box': 'Shulker Box',
-  'minecraft:ender_chest': 'Ender Chest',
-  'minecraft:chest_minecart': 'Minecart with Chest',
-  'minecraft:hopper_minecart': 'Minecart with Hopper'
+  [MinecraftIds.BLOCK_CHEST]: 'Chest',
+  [MinecraftIds.BLOCK_TRAPPED_CHEST]: 'Trapped Chest',
+  [MinecraftIds.BLOCK_BARREL]: 'Barrel',
+  [MinecraftIds.BLOCK_HOPPER]: 'Hopper',
+  [MinecraftIds.BLOCK_DISPENSER]: 'Dispenser',
+  [MinecraftIds.BLOCK_DROPPER]: 'Dropper',
+  [MinecraftIds.BLOCK_FURNACE]: 'Furnace',
+  [MinecraftIds.BLOCK_BLAST_FURNACE]: 'Blast Furnace',
+  [MinecraftIds.BLOCK_SMOKER]: 'Smoker',
+  [MinecraftIds.BLOCK_BREWING_STAND]: 'Brewing Stand',
+  [MinecraftIds.BLOCK_SHULKER_BOX]: 'Shulker Box',
+  [MinecraftIds.BLOCK_ENDER_CHEST]: 'Ender Chest',
+  [MinecraftIds.ENTITY_CHEST_MINECART]: 'Minecart with Chest',
+  [MinecraftIds.ENTITY_HOPPER_MINECART]: 'Minecart with Hopper'
 }
 
 /**
@@ -25,18 +26,21 @@ const CONTAINER_TITLES: Record<string, string> = {
  * @param container - コンテナ情報（ラージチェスト判定用、省略可）
  */
 export function formatContainerTitle(blockEntityId: string, container?: ContainerRecord): string {
-  if (container?.largeChest) {
-    if (blockEntityId === 'minecraft:trapped_chest') {
+  // ラージチェスト情報がある場合は通常チェストと表示名を分ける
+  if (container !== undefined && container.largeChest !== undefined) {
+    // トラップチェストのラージチェストは専用名で表示する
+    if (blockEntityId === MinecraftIds.BLOCK_TRAPPED_CHEST) {
       return 'Large Trapped Chest'
     }
     return 'Large Chest'
   }
 
+  // 既知のコンテナ ID は定義済みタイトルを使う
   if (CONTAINER_TITLES[blockEntityId]) {
     return CONTAINER_TITLES[blockEntityId]
   }
-
   let name = blockEntityId
+  // 名前空間付き ID は表示名から名前空間を除外する
   if (blockEntityId.includes(':')) {
     name = blockEntityId.split(':')[1]
   }
@@ -53,9 +57,11 @@ export function formatContainerTitle(blockEntityId: string, container?: Containe
  * @param slotCount - スロット数
  */
 export function getChestGridClass(blockEntityId: string, slotCount: number): string {
-  if (blockEntityId === 'minecraft:hopper' || blockEntityId === 'minecraft:hopper_minecart') {
+  // ホッパー系コンテナは横長グリッドを使う
+  if (blockEntityId === MinecraftIds.BLOCK_HOPPER || blockEntityId === MinecraftIds.ENTITY_HOPPER_MINECART) {
     return 'mc-chest-grid mc-chest-grid--hopper'
   }
+  // 1 スロット以下のコンテナは単独スロット用グリッドを使う
   if (slotCount <= 1) {
     return 'mc-chest-grid mc-chest-grid--single'
   }
@@ -70,9 +76,10 @@ export function getChestGridClass(blockEntityId: string, slotCount: number): str
  */
 export function getChestWindowClass(blockEntityId: string, slotCount: number): string {
   const compact =
-    blockEntityId === 'minecraft:hopper' ||
-    blockEntityId === 'minecraft:hopper_minecart' ||
+    blockEntityId === MinecraftIds.BLOCK_HOPPER ||
+    blockEntityId === MinecraftIds.ENTITY_HOPPER_MINECART ||
     slotCount <= 1
+  // コンパクト表示が必要なコンテナは専用ウィンドウクラスを付ける
   if (compact) {
     return 'mc-chest-window mc-chest-window--compact'
   }

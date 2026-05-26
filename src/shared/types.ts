@@ -5,7 +5,7 @@ export type SourceType = 'entity' | 'block_entity'
 export interface ItemStackView {
   /** スロット番号 */
   slot: number
-  /** アイテム ID（例: minecraft:diamond） */
+  /** アイテム ID（名前空間付き、例: minecraft:diamond） */
   itemId: string
   /** 個数 */
   count: number

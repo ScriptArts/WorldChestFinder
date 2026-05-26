@@ -38,8 +38,14 @@ function Button({
 }: React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-  }): JSX.Element {
-  const Comp = asChild ? Slot : 'button'
+}): JSX.Element {
+  let Comp: React.ElementType
+  // 子要素をボタンとして扱う場合は Radix Slot を使う
+  if (asChild) {
+    Comp = Slot
+  } else {
+    Comp = 'button'
+  }
   return <Comp className={cn(buttonVariants({ variant, size, className }))} {...props} />
 }
 

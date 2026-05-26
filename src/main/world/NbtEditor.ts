@@ -1,3 +1,4 @@
+import { MinecraftIds } from '../../shared/minecraftIds'
 import type { ItemStackView } from '../../shared/types'
 import type { NbtCompound, NbtTag } from './nbtUtils'
 import { buildEmptySlot, parseItemsList } from './ItemStackParser'
@@ -248,7 +249,7 @@ export function updateSlotInCompound(owner: NbtCompound, slot: number, item: Ite
   const entries = getItemsListEntries(owner)
   const index = findEntryIndexBySlot(entries, slot)
 
-  if (item && item.itemId !== 'minecraft:air' && item.count > 0) {
+  if (item && item.itemId !== MinecraftIds.ITEM_AIR && item.count > 0) {
     if (index >= 0) {
       applyItemView(entryCompound(entries[index]), item)
     } else {
@@ -282,7 +283,7 @@ export function transferSlotItem(
   fromSlot: number,
   item: ItemStackView | null
 ): ItemStackView[] {
-  if (!item || item.itemId === 'minecraft:air' || item.count <= 0) {
+  if (!item || item.itemId === MinecraftIds.ITEM_AIR || item.count <= 0) {
     return updateSlotInCompound(owner, fromSlot, null)
   }
 

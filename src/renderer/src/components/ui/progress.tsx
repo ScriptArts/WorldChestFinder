@@ -5,6 +5,13 @@ interface ProgressProps {
   className?: string
 }
 
+/**
+ * 進捗率を横棒で表示する。
+ *
+ * @param value - 0 から 100 までの進捗率
+ * @param className - 追加する CSS クラス
+ * @returns 進捗バー要素
+ */
 export function Progress({ value, className }: ProgressProps): JSX.Element {
   const clamped = Math.min(100, Math.max(0, value))
   return (

@@ -98,13 +98,19 @@ function resolveOwnerForHalf(
   session: ScanSession
 ): NbtCompound | null {
   const region = session.regions.get(half.regionFile)
-  if (!region) return null
+  // 対象リージョンが未ロードの場合は owner を解決できない
+  if (!region) {
+    return null
+  }
 
+  // リージョン内の各チャンクから対象座標の Items owner を探す
   for (const chunk of region.chunks.values()) {
     const hits = findItemsHits(chunk.nbt)
+    // Items タグを持つ NBT 候補を座標で照合する
     for (const hit of hits) {
       const pos = extractPosition(hit.ownerCompound)
-      if (pos && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
+      // 対象チェスト半分の座標と一致した owner を返す
+      if (pos !== null && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
         return hit.ownerCompound
       }
     }
@@ -120,13 +126,19 @@ function findBindingForHalf(
   session: ScanSession
 ): ContainerBinding | null {
   const region = session.regions.get(half.regionFile)
-  if (!region) return null
+  // 対象リージョンが未ロードの場合は binding を解決できない
+  if (!region) {
+    return null
+  }
 
+  // リージョン内の各チャンクから対象座標の binding を探す
   for (const chunk of region.chunks.values()) {
     const hits = findItemsHits(chunk.nbt)
+    // Items タグを持つ NBT 候補を座標で照合する
     for (const hit of hits) {
       const pos = extractPosition(hit.ownerCompound)
-      if (pos && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
+      // 対象チェスト半分の座標と一致したチャンク情報を返す
+      if (pos !== null && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
         return { regionFile: half.regionFile, localX: chunk.localX, localZ: chunk.localZ }
       }
     }
@@ -407,20 +419,35 @@ export class AppSession {
     targetSlot: number,
     mutate: (owner: NbtCompound) => ItemStackView[]
   ): Promise<ContainerRecord | null> {
-    if (!this.session) return null
+    // セッション未初期化時は変更対象がない
+    if (!this.session) {
+      return null
+    }
     const container = this.session.containers[containerIndex]
     const pair = container.largeChest!
     const side = getHalfForSlot(targetSlot)
-    const half = side === 'primary' ? pair.primary : pair.secondary
+    let half: LargeChestHalf
+    // 対象スロットが属する片側チェストを選ぶ
+    if (side === 'primary') {
+      half = pair.primary
+    } else {
+      half = pair.secondary
+    }
 
     await this.ensureRegionLoaded(half.regionFile)
     const owner = resolveOwnerForHalf(half, this.session)
-    if (!owner) return null
+    // owner が見つからない場合は変更できない
+    if (!owner) {
+      return null
+    }
 
     mutate(owner)
 
     const binding = findBindingForHalf(half, this.session)
-    if (binding) this.markChunkDirty(binding)
+    // binding が見つかった場合だけ該当チャンクを dirty にする
+    if (binding) {
+      this.markChunkDirty(binding)
+    }
 
     return this.rebuildLargeChestContainer(containerIndex)
   }
@@ -433,29 +460,53 @@ export class AppSession {
     fromSlot: number,
     toSlot: number
   ): Promise<ContainerRecord | null> {
-    if (!this.session) return null
-    if (fromSlot === toSlot) return this.session.containers[containerIndex]
+    // セッション未初期化時は変更対象がない
+    if (!this.session) {
+      return null
+    }
+    // 移動元と移動先が同じ場合は現在のコンテナをそのまま返す
+    if (fromSlot === toSlot) {
+      return this.session.containers[containerIndex]
+    }
 
     const container = this.session.containers[containerIndex]
     const pair = container.largeChest!
     const fromSide = getHalfForSlot(fromSlot)
     const toSide = getHalfForSlot(toSlot)
 
+    // 同じ片側チェスト内の移動は単一 owner の更新で処理する
     if (fromSide === toSide) {
       return this.mutateLargeChest(containerIndex, fromSlot, (owner) =>
         moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot))
       )
     }
 
-    const fromHalf = fromSide === 'primary' ? pair.primary : pair.secondary
-    const toHalf = toSide === 'primary' ? pair.primary : pair.secondary
+    // 別々の片側チェストにまたがる移動は両 owner を更新する
+    let fromHalf: LargeChestHalf
+    // 移動元スロットが属する片側チェストを選ぶ
+    if (fromSide === 'primary') {
+      fromHalf = pair.primary
+    } else {
+      fromHalf = pair.secondary
+    }
+
+    let toHalf: LargeChestHalf
+    // 移動先スロットが属する片側チェストを選ぶ
+    if (toSide === 'primary') {
+      toHalf = pair.primary
+    } else {
+      toHalf = pair.secondary
+    }
 
     await this.ensureRegionLoaded(fromHalf.regionFile)
     await this.ensureRegionLoaded(toHalf.regionFile)
 
     const fromOwner = resolveOwnerForHalf(fromHalf, this.session)
     const toOwner = resolveOwnerForHalf(toHalf, this.session)
-    if (!fromOwner || !toOwner) return null
+    // 片側でも owner が見つからない場合は安全に移動できない
+    if (!fromOwner || !toOwner) {
+      return null
+    }
 
     const localFrom = toLocalSlot(fromSlot)
     const localTo = toLocalSlot(toSlot)
@@ -465,11 +516,13 @@ export class AppSession {
     const fromItem = fromItems.find((i) => i.slot === localFrom) || null
     const toItem = toItems.find((i) => i.slot === localTo) || null
 
+    // 移動元にアイテムがある場合は移動先 owner へ移す
     if (fromItem) {
       transferSlotItem(fromOwner, localFrom, null)
       const movedItem = { ...fromItem, slot: localTo, raw: { ...fromItem.raw, Slot: localTo } }
       transferSlotItem(toOwner, localTo, movedItem)
     }
+    // 移動先にアイテムがある場合は元スロットへ戻して入れ替える
     if (toItem) {
       transferSlotItem(toOwner, localTo, null)
       const movedBack = { ...toItem, slot: localFrom, raw: { ...toItem.raw, Slot: localFrom } }
@@ -478,8 +531,14 @@ export class AppSession {
 
     const fromBinding = findBindingForHalf(fromHalf, this.session)
     const toBinding = findBindingForHalf(toHalf, this.session)
-    if (fromBinding) this.markChunkDirty(fromBinding)
-    if (toBinding) this.markChunkDirty(toBinding)
+    // 移動元チャンクの binding が見つかった場合は dirty にする
+    if (fromBinding) {
+      this.markChunkDirty(fromBinding)
+    }
+    // 移動先チャンクの binding が見つかった場合は dirty にする
+    if (toBinding) {
+      this.markChunkDirty(toBinding)
+    }
 
     return this.rebuildLargeChestContainer(containerIndex)
   }
@@ -488,15 +547,31 @@ export class AppSession {
    * 両側の NBT を再読み込みしてマージ済みコンテナを再構築する。
    */
   private rebuildLargeChestContainer(containerIndex: number): ContainerRecord | null {
-    if (!this.session) return null
+    // セッション未初期化時は再構築できない
+    if (!this.session) {
+      return null
+    }
     const container = this.session.containers[containerIndex]
     const pair = container.largeChest!
 
     const primaryOwner = resolveOwnerForHalf(pair.primary, this.session)
     const secondaryOwner = resolveOwnerForHalf(pair.secondary, this.session)
 
-    const primaryItems = primaryOwner ? parseItemsList(getListItems(primaryOwner, 'Items')) : []
-    const secondaryItems = secondaryOwner ? parseItemsList(getListItems(secondaryOwner, 'Items')) : []
+    let primaryItems: ItemStackView[]
+    // primary owner が見つかった場合だけ Items を読み直す
+    if (primaryOwner) {
+      primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'))
+    } else {
+      primaryItems = []
+    }
+
+    let secondaryItems: ItemStackView[]
+    // secondary owner が見つかった場合だけ Items を読み直す
+    if (secondaryOwner) {
+      secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'))
+    } else {
+      secondaryItems = []
+    }
 
     const mergedItems: ItemStackView[] = [
       ...primaryItems,

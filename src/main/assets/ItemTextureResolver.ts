@@ -1,6 +1,7 @@
 import { accessSync } from 'fs'
 import { readFile } from 'fs/promises'
 import path from 'path'
+import { MinecraftIds } from '../../shared/minecraftIds'
 import { getAssetPackRoots } from './ResourcePackManager'
 
 interface ParsedItemId {
@@ -204,11 +205,11 @@ async function resolveFromPackRoot(packRoot: string, parsed: ParsedItemId): Prom
 /**
  * アイテム ID からテクスチャ PNG の絶対パスを解決する。
  *
- * @param itemId - 例: minecraft:diamond
+ * @param itemId - アイテム ID（例: minecraft:diamond）
  * @returns 見つかった PNG パス、または null
  */
 export async function resolveItemTexture(itemId: string): Promise<string | null> {
-  if (!itemId || itemId === 'minecraft:air') {
+  if (!itemId || itemId === MinecraftIds.ITEM_AIR) {
     return null
   }
 

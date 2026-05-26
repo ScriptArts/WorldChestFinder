@@ -1,28 +1,29 @@
+import { MinecraftIds } from '../../shared/minecraftIds'
 import type { ItemStackView } from '../../shared/types'
 import { coalesce, firstDefined } from '../../shared/valueUtils'
 import type { NbtCompound } from './nbtUtils'
 import { compoundToPlain, getCompoundField, getInt, getString } from './nbtUtils'
 
 const CONTAINER_SLOTS: Record<string, number> = {
-  'minecraft:chest': 27,
-  'minecraft:trapped_chest': 27,
-  'minecraft:barrel': 27,
-  'minecraft:hopper': 5,
-  'minecraft:dispenser': 9,
-  'minecraft:dropper': 9,
-  'minecraft:furnace': 1,
-  'minecraft:brewing_stand': 5
+  [MinecraftIds.BLOCK_CHEST]: 27,
+  [MinecraftIds.BLOCK_TRAPPED_CHEST]: 27,
+  [MinecraftIds.BLOCK_BARREL]: 27,
+  [MinecraftIds.BLOCK_HOPPER]: 5,
+  [MinecraftIds.BLOCK_DISPENSER]: 9,
+  [MinecraftIds.BLOCK_DROPPER]: 9,
+  [MinecraftIds.BLOCK_FURNACE]: 1,
+  [MinecraftIds.BLOCK_BREWING_STAND]: 5
 }
 
 function summarizeComponents(components: NbtCompound | undefined): string {
   if (!components) {
     return ''
   }
-  const customName = getString(components, 'minecraft:custom_name')
+  const customName = getString(components, MinecraftIds.COMPONENT_CUSTOM_NAME)
   if (customName) {
     return customName
   }
-  const damage = getInt(components, 'minecraft:damage')
+  const damage = getInt(components, MinecraftIds.COMPONENT_DAMAGE)
   if (damage !== undefined) {
     return `damage=${damage}`
   }
@@ -68,7 +69,7 @@ function summarizeDisplay(compound: NbtCompound): string {
  */
 export function parseItemStack(compound: NbtCompound, fallbackSlot: number): ItemStackView {
   const slot = coalesce(getInt(compound, 'Slot'), fallbackSlot)
-  const itemId = coalesce(getString(compound, 'id'), 'minecraft:air')
+  const itemId = coalesce(getString(compound, 'id'), MinecraftIds.ITEM_AIR)
   const countField = getInt(compound, 'count')
   const countLegacy = getInt(compound, 'Count')
   const count = coalesce(firstDefined(countField, countLegacy), 0)
@@ -121,7 +122,7 @@ export function inferSlotCount(blockEntityId: string, items: ItemStackView[]): n
  * @param slot - スロット番号
  */
 export function buildEmptySlot(slot: number): Record<string, unknown> {
-  return { Slot: slot, id: 'minecraft:air', count: 0 }
+  return { Slot: slot, id: MinecraftIds.ITEM_AIR, count: 0 }
 }
 
 /**

@@ -7,6 +7,9 @@ import { app } from 'electron'
 import { invokeOptional } from '../../shared/valueUtils'
 import { logger } from '../logging/AppLogger'
 
+/**
+ * アセットダウンロードの進捗情報を表す。
+ */
 export interface AssetDownloadProgress {
   phase: string
   current: number

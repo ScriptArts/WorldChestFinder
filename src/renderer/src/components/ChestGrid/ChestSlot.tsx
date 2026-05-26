@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { MinecraftIds } from '../../../../shared/minecraftIds'
 import { cn } from '@renderer/lib/utils'
 import { DRAG_MIME, hideNativeDragImage } from './dragUtils'
 
@@ -40,7 +41,7 @@ export function ChestSlot({
   onDrop
 }: ChestSlotProps): JSX.Element {
   const [textureUrl, setTextureUrl] = useState<string | null>(null)
-  const hasItem = itemId !== undefined && itemId !== 'minecraft:air' && effectiveCount(count) > 0
+  const hasItem = itemId !== undefined && itemId !== MinecraftIds.ITEM_AIR && effectiveCount(count) > 0
 
   useEffect(() => {
     let active = true
