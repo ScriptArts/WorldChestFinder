@@ -1,0 +1,199 @@
+import { useEffect, useRef, useState } from 'react'
+import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
+import { Button } from '../ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { JsonCodeEditor } from '../ui/json-code-editor'
+import { Label } from '../ui/label'
+
+interface SlotEditorProps {
+  container: ContainerRecord | null
+  slot: number | null
+  onUpdated: (container: ContainerRecord, targetSlot?: number) => void
+  onError: (message: string) => void
+  disabled?: boolean
+}
+
+interface EditorTarget {
+  containerId: string
+  slot: number
+}
+
+function itemFromRaw(slot: number, itemId: string, count: number, raw: Record<string, unknown>): ItemStackView {
+  const nextRaw: Record<string, unknown> = { ...raw, Slot: slot, id: itemId }
+  return {
+    slot,
+    itemId,
+    count,
+    displaySummary: '',
+    raw: nextRaw
+  }
+}
+
+function targetsMatch(current: EditorTarget | null, expected: EditorTarget): boolean {
+  if (current !== null && current.containerId === expected.containerId && current.slot === expected.slot) {
+    // 適用開始時と同じ対象が表示中なら true を返す
+    return true
+  }
+  return false
+}
+
+function parseTargetSlot(raw: Record<string, unknown>, fallback: number, slotCount: number): number | null {
+  let candidate = fallback
+  if (typeof raw.Slot === 'number') {
+    candidate = raw.Slot
+  }
+  if (!Number.isInteger(candidate) || candidate < 0 || candidate >= slotCount) {
+    return null
+  }
+  return candidate
+}
+
+function parseItemId(raw: Record<string, unknown>): string | null {
+  if (typeof raw.id !== 'string' || raw.id.trim() === '') {
+    return null
+  }
+  return raw.id
+}
+
+function parseItemCount(raw: Record<string, unknown>): number | null {
+  let value = raw.count
+  if (value === undefined) {
+    // legacy NBT の Count も編集値として受け付ける
+    value = raw.Count
+  }
+  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
+    return null
+  }
+  return value
+}
+
+/**
+ * 選択スロットの NBT JSON を編集するパネル。
+ *
+ * @param container - 編集対象コンテナ
+ * @param slot - 編集対象スロット番号
+ * @param onUpdated - 適用成功時コールバック
+ * @param onError - エラーメッセージ通知
+ * @param disabled - 操作中は true
+ */
+export function SlotEditor({ container, slot, onUpdated, onError, disabled = false }: SlotEditorProps): JSX.Element {
+  const [nbtJson, setNbtJson] = useState('{}')
+  const [isApplying, setIsApplying] = useState(false)
+  const applyingRef = useRef(false)
+  const activeTargetRef = useRef<EditorTarget | null>(null)
+
+  useEffect(() => {
+    if (!container || slot === null) {
+      activeTargetRef.current = null
+      return
+    }
+    activeTargetRef.current = { containerId: container.id, slot }
+    const existing = container.items.find((entry) => entry.slot === slot)
+
+    let nextRaw: Record<string, unknown> = { Slot: slot, id: 'minecraft:air', count: 0 }
+    if (existing !== undefined) {
+      nextRaw = existing.raw
+    }
+
+    setNbtJson(JSON.stringify(nextRaw, null, 2))
+  }, [container, slot])
+
+  if (!container || slot === null) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          スロットを選択してください
+        </CardContent>
+      </Card>
+    )
+  }
+
+  async function applyItem(nextItem: ItemStackView | null): Promise<void> {
+    if (disabled || applyingRef.current) {
+      // 操作中または適用中は重複 IPC を送らない
+      return
+    }
+    const targetContainerId = container.id
+    const targetSlotBeforeApply = slot
+    const expectedTarget = { containerId: targetContainerId, slot: targetSlotBeforeApply }
+    applyingRef.current = true
+    setIsApplying(true)
+    try {
+      const updated = await window.worldChest.updateSlot({
+        containerId: targetContainerId,
+        slot: targetSlotBeforeApply,
+        item: nextItem
+      })
+      if (updated) {
+        if (targetsMatch(activeTargetRef.current, expectedTarget)) {
+          // 適用中に別コンテナへ切り替わっていない場合だけ画面へ反映する
+          let targetSlot: number | undefined
+          if (nextItem !== null) {
+            targetSlot = nextItem.slot
+          }
+          onUpdated(updated, targetSlot)
+        }
+        return
+      }
+      onError('スロットの更新に失敗しました。スキャン後に再度お試しください。')
+    } finally {
+      applyingRef.current = false
+      setIsApplying(false)
+    }
+  }
+
+  async function apply(): Promise<void> {
+    try {
+      const raw = JSON.parse(nbtJson) as Record<string, unknown>
+      const targetSlot = parseTargetSlot(raw, slot, container.slotCount)
+      if (targetSlot === null) {
+        onError(`Slot は 0 〜 ${container.slotCount - 1} の整数で指定してください`)
+        return
+      }
+      const itemId = parseItemId(raw)
+      if (itemId === null) {
+        onError('id は空でない文字列で指定してください')
+        return
+      }
+      const count = parseItemCount(raw)
+      if (count === null || count < 0 || count > 64) {
+        onError('count または Count は 0 〜 64 の整数で指定してください')
+        return
+      }
+      await applyItem(itemFromRaw(targetSlot, itemId, count, raw))
+    } catch {
+      onError('NBT JSON の形式が正しくありません')
+    }
+  }
+
+  const editorDisabled = disabled || isApplying
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle>Slot {slot}</CardTitle>
+        <CardDescription>
+          変更後は「適用」を押してから、ヘッダーの「保存」でワールドに書き込みます
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid gap-2">
+          <Label htmlFor="slot-nbt-json">NBT (JSON)</Label>
+          <JsonCodeEditor
+            id="slot-nbt-json"
+            value={nbtJson}
+            disabled={editorDisabled}
+            onChange={(value) => {
+              // JSON エディタの内容をそのまま編集状態へ反映する
+              setNbtJson(value)
+            }}
+          />
+        </div>
+        <div className="flex gap-2">
+          <Button type="button" onClick={apply} disabled={editorDisabled}>適用</Button>
+          <Button type="button" variant="outline" onClick={() => applyItem(null)} disabled={editorDisabled}>クリア</Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
