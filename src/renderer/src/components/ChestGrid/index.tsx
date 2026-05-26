@@ -24,16 +24,16 @@ function buildSlots(container: ContainerRecord): Array<{ slot: number; item: Con
 }
 
 function renderDragPreviewContent(dragPreview: DragPreviewState): JSX.Element {
+  // テクスチャが解決済みなら画像をプレビューする
   if (dragPreview.textureUrl) {
-    // テクスチャが解決済みなら画像をプレビューする
     return <img src={dragPreview.textureUrl} alt="" className="mc-drag-preview-icon" />
   }
   return <span className="mc-drag-preview-fallback">{dragPreview.label}</span>
 }
 
 function renderDragPreviewCount(count: number): JSX.Element | null {
+  // 2 個以上のスタックだけ個数バッジを表示する
   if (count > 1) {
-    // 2 個以上のスタックだけ個数バッジを表示する
     return <span className="mc-drag-preview-count">{count}</span>
   }
   return null
@@ -54,6 +54,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
   const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null)
 
   useEffect(() => {
+    // ドラッグ中でなければカーソル追従リスナーを登録しない
     if (draggingSlot === null) {
       return
     }
@@ -61,6 +62,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
     function handleDragOver(event: DragEvent): void {
       event.preventDefault()
       setDragPreview((current) => {
+        // プレビュー状態がなければ更新しない
         if (!current) {
           return current
         }
@@ -80,6 +82,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
     setDragPreview(null)
   }
 
+  // コンテナ未選択時は案内メッセージを表示する
   if (!container) {
     return (
       <Card>
@@ -93,6 +96,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
 
   async function handleDrop(fromSlot: number, toSlot: number): Promise<void> {
     clearDragState()
+    // 同一スロットまたは操作中のドロップは無視する
     if (fromSlot === toSlot || disabled) {
       return
     }
@@ -100,6 +104,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
   }
 
   let dragPreviewPortal: JSX.Element | null = null
+  // ドラッグプレビューがあれば body へポータル表示する
   if (dragPreview) {
     dragPreviewPortal = createPortal(
       <div
@@ -116,6 +121,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
   }
 
   let rootClassName = 'mc-chest-root'
+  // 操作中はグリッド全体の操作を無効化する
   if (disabled) {
     rootClassName = cn('mc-chest-root', 'pointer-events-none opacity-60')
   }
@@ -132,6 +138,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
           className={getChestGridClass(container.blockEntityId, container.slotCount)}
           style={{ gridTemplateRows: `repeat(${rows}, var(--mc-slot-size))` }}
           onDragLeave={(event) => {
+            // グリッド外へ完全に離れたときだけハイライトを解除する
             if (event.currentTarget === event.target) {
               setDragOverSlot(null)
             }
@@ -140,6 +147,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
           {slots.map(({ slot, item }) => {
             let slotItemId: string | undefined
             let slotItemCount: number | undefined
+            // スロットにアイテムがあれば表示用プロパティを設定する
             if (item !== undefined) {
               slotItemId = item.itemId
               slotItemCount = item.count
@@ -155,11 +163,13 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
                 dragging={draggingSlot === slot}
                 dragOver={dragOverSlot === slot && draggingSlot !== slot}
                 onClick={() => {
+                  // 操作中でなければスロット選択を通知する
                   if (!disabled) {
                     onSelectSlot(slot)
                   }
                 }}
                 onDragStart={(details) => {
+                  // 操作中はドラッグ開始を受け付けない
                   if (disabled) {
                     return
                   }

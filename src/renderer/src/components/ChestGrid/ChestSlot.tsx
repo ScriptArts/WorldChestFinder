@@ -18,6 +18,7 @@ interface ChestSlotProps {
 }
 
 function effectiveCount(count: number | undefined): number {
+  // 個数未指定なら 0 として扱う
   if (count === undefined) {
     return 0
   }
@@ -45,6 +46,7 @@ export function ChestSlot({
 
   useEffect(() => {
     let active = true
+    // アイテムがなければテクスチャ表示をクリアする
     if (!hasItem || !itemId) {
       setTextureUrl(null)
       return
@@ -52,6 +54,7 @@ export function ChestSlot({
     setTextureUrl(null)
     // アイテム ID からテクスチャ URL を解決する
     window.worldChest.resolveTexture(itemId).then((url) => {
+      // アンマウント後の setState を防ぐ
       if (active) {
         setTextureUrl(url)
       }
@@ -62,16 +65,19 @@ export function ChestSlot({
   }, [hasItem, itemId])
 
   let slotTitle = `Slot ${slot}`
+  // アイテムがある場合は ID と個数をツールチップに表示する
   if (hasItem && itemId !== undefined) {
     slotTitle = `${itemId} x${count}`
   }
 
   let dragCount = 1
+  // 個数が指定されていれば DnD 用個数に反映する
   if (count !== undefined) {
     dragCount = count
   }
 
   let itemIcon: JSX.Element | null = null
+  // テクスチャが解決済みならアイコン画像を表示する
   if (hasItem && textureUrl && itemId !== undefined) {
     itemIcon = (
       <img
@@ -85,11 +91,13 @@ export function ChestSlot({
   }
 
   let itemFallback: JSX.Element | null = null
+  // テクスチャ未取得時は ID の先頭文字で代替表示する
   if (hasItem && !textureUrl && itemId !== undefined) {
     itemFallback = <span className="mc-item-fallback">{itemId.replace('minecraft:', '').slice(0, 4)}</span>
   }
 
   let countLabel: JSX.Element | null = null
+  // 2 個以上のスタックだけ個数ラベルを表示する
   if (hasItem && effectiveCount(count) > 1) {
     countLabel = <span className="mc-item-count">{count}</span>
   }
@@ -107,12 +115,14 @@ export function ChestSlot({
       onClick={onClick}
       title={slotTitle}
       onDragStart={(event) => {
+        // アイテムがないスロットはドラッグ開始を拒否する
         if (!hasItem || !itemId) {
           event.preventDefault()
           return
         }
         event.dataTransfer.setData(DRAG_MIME, String(slot))
         event.dataTransfer.effectAllowed = 'move'
+        // ブラウザ標準のドラッグ画像を非表示にする
         hideNativeDragImage(event)
         onDragStart({
           x: event.clientX,

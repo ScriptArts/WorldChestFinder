@@ -5,6 +5,7 @@
  * @returns 最初に見つかった値。すべて未定義なら undefined
  */
 export function firstDefined<T>(...values: Array<T | undefined | null>): T | undefined {
+  // 候補値を先頭から順に走査する
   for (const value of values) {
     // null / undefined でなければ採用する
     if (value !== undefined && value !== null) {
@@ -22,6 +23,7 @@ export function firstDefined<T>(...values: Array<T | undefined | null>): T | und
  * @returns 有効な値、またはフォールバック
  */
 export function coalesce<T>(value: T | undefined | null, fallback: T): T {
+  // 値が未設定ならフォールバックを返す
   if (value === undefined || value === null) {
     return fallback
   }
@@ -35,6 +37,7 @@ export function coalesce<T>(value: T | undefined | null, fallback: T): T {
  * @returns 表示用エラーメッセージ
  */
 export function formatError(error: unknown): string {
+  // Error インスタンスなら message をそのまま使う
   if (error instanceof Error) {
     return error.message
   }
@@ -51,6 +54,7 @@ export function invokeOptional<T extends (...args: never[]) => void>(
   callback: T | undefined,
   ...args: Parameters<T>
 ): void {
+  // コールバックが渡されていれば実行する
   if (callback !== undefined) {
     callback(...args)
   }

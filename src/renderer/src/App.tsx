@@ -22,6 +22,7 @@ const MIN_PROGRESS_VISIBLE_MS = 500
 function waitForProgressVisibility(startedAt: number): Promise<void> {
   const elapsed = Date.now() - startedAt
   const remaining = MIN_PROGRESS_VISIBLE_MS - elapsed
+  // 最低表示時間を満たしていれば待機不要
   if (remaining <= 0) {
     return Promise.resolve()
   }
@@ -36,9 +37,11 @@ function waitForProgressVisibility(startedAt: number): Promise<void> {
  * @param kind - success / error / info
  */
 function getSaveNoticeClassName(kind: 'success' | 'error' | 'info'): string {
+  // 成功通知用のスタイルを返す
   if (kind === 'success') {
     return 'border-b border-green-500/40 bg-green-500/15 px-4 py-3 text-sm font-medium text-green-950 dark:text-green-100'
   }
+  // エラー通知用のスタイルを返す
   if (kind === 'error') {
     return 'border-b border-destructive/40 bg-destructive/15 px-4 py-3 text-sm font-medium text-destructive'
   }
@@ -87,6 +90,7 @@ export default function App(): JSX.Element {
     })
     const unsubscribeAssets = window.worldChest.onAssetDownloadProgress((nextProgress) => {
       setAssetProgress(nextProgress)
+      // スキャン中でなければ assets 進捗をステータスへ反映する
       if (!isScanning) {
         setStatusMessage(nextProgress.message)
       }
@@ -95,6 +99,7 @@ export default function App(): JSX.Element {
     // 起動時にバニラ assets の準備状態を取得する
     window.worldChest.ensureAssets().then((status) => {
       setAssetsStatus(status)
+      // assets 準備完了時にバージョン情報を表示する
       if (status.ready) {
         const versionLabel = coalesce(status.vanillaVersion, 'cached')
         setStatusMessage(`バニラ assets 準備完了 (${versionLabel})`)
@@ -112,6 +117,7 @@ export default function App(): JSX.Element {
 
   const selectedContainer = useMemo(() => {
     const found = containers.find((entry) => entry.id === selectedContainerId)
+    // 選択 ID に一致するコンテナがなければ null
     if (found === undefined) {
       return null
     }
@@ -125,9 +131,11 @@ export default function App(): JSX.Element {
   }, [selectedContainerId])
 
   const loadProgress = useMemo(() => {
+    // スキャン進捗があればそれを優先表示する
     if (progress !== null) {
       return progress
     }
+    // スキャン中なら assets ダウンロード進捗を表示する
     if (isScanning && assetProgress !== null) {
       return assetProgress
     }
@@ -137,6 +145,7 @@ export default function App(): JSX.Element {
   const isBusy = isScanning || isSaving || isMovingSlot
 
   async function refreshSaveStatus(): Promise<void> {
+    // メインプロセスから最新の保存状態を取得する
     const status = await window.worldChest.getSaveStatus()
     setSaveStatus(status)
   }
@@ -153,8 +162,8 @@ export default function App(): JSX.Element {
   }
 
   function isSelectedContainer(containerId: string): boolean {
+    // 非同期操作開始時と同じコンテナが選択されている場合だけ true を返す
     if (selectedContainerIdRef.current === containerId) {
-      // 非同期操作開始時と同じコンテナが選択されている場合だけ true を返す
       return true
     }
     return false
@@ -168,6 +177,7 @@ export default function App(): JSX.Element {
   }, [])
 
   useEffect(() => {
+    // 通知がなければ自動消去タイマーを設定しない
     if (!saveNotice) {
       return
     }
@@ -176,12 +186,15 @@ export default function App(): JSX.Element {
   }, [saveNotice])
 
   async function handleSelectWorld(): Promise<void> {
+    // 未保存変更がある場合はワールド切替を拒否する
     if (saveStatus.pendingRegionCount > 0) {
       const message = '未保存の変更があります。保存してから別のワールドを選択してください'
       showSaveNotice('info', message)
       return
     }
+    // ファイルダイアログでワールドパスを選択する
     const path = await window.worldChest.selectWorld()
+    // パスが選ばれたらプレビュー状態を初期化する
     if (path) {
       clearWorldPreview(path)
       setStatusMessage(`Selected: ${path}`)
@@ -190,15 +203,18 @@ export default function App(): JSX.Element {
 
   async function handleSearch(nextFilter: SearchFilter): Promise<void> {
     setFilter(nextFilter)
+    // フィルタ条件に一致するコンテナ一覧を取得する
     const nextContainers = await window.worldChest.getContainers(nextFilter)
     setContainers(nextContainers)
   }
 
   async function handleScan(): Promise<void> {
+    // ワールド未選択ならスキャンを開始しない
     if (!worldPath) {
       setStatusMessage('先にワールドを選択してください')
       return
     }
+    // 未保存変更がある場合は再スキャンを拒否する
     if (saveStatus.pendingRegionCount > 0) {
       const message = '未保存の変更があります。保存してから再スキャンしてください'
       showSaveNotice('info', message)
@@ -216,6 +232,7 @@ export default function App(): JSX.Element {
     const startedAt = Date.now()
 
     try {
+      // ワールド全体をスキャンする
       const result = await window.worldChest.scanWorld(worldPath)
       setScanResult(result)
       const nextStatus = await window.worldChest.getAssetsStatus()
@@ -265,16 +282,20 @@ export default function App(): JSX.Element {
     const startedAt = Date.now()
 
     try {
+      // 変更済みリージョンをワールドへ書き込む
       const report = await window.worldChest.saveChanges()
       // 保存成功後に未保存件数を同期する
       await refreshSaveStatus()
 
+      // 保存対象がなければ案内メッセージを表示する
       if (report.nothingToSave) {
         const message = '保存する変更がありません。スロットを編集してから保存してください'
         showSaveNotice('info', message)
+      // 保存成功時は完了メッセージを表示する
       } else if (report.success) {
         const message = `保存完了: ${report.savedFiles.length} リージョンファイルを書き込みました`
         showSaveNotice('success', message)
+      // 保存失敗時はエラー内容を表示する
       } else {
         const message = `保存エラー: ${report.errors.join(' / ')}`
         showSaveNotice('error', message)
@@ -294,47 +315,54 @@ export default function App(): JSX.Element {
   const canSave = !isBusy && saveStatus.worldLoaded && saveStatus.pendingRegionCount > 0
 
   let saveButtonVariant: 'default' | 'outline' = 'outline'
+  // 保存中はボタンを強調表示する
   if (isSaving) {
     saveButtonVariant = 'default'
   }
 
   let saveButtonLabel = '保存'
+  // 保存中はラベルを進行中表示に切り替える
   if (isSaving) {
     saveButtonLabel = '保存中...'
   }
 
   let worldPathLabel = '未選択'
+  // ワールドパスが選ばれていればそのパスを表示する
   if (worldPath !== null) {
     worldPathLabel = worldPath
   }
 
   let vanillaVersionLabel = 'cached'
+  // バニラバージョンが取得できていれば表示名を差し替える
   if (assetsStatus !== null && assetsStatus.vanillaVersion !== null) {
     vanillaVersionLabel = assetsStatus.vanillaVersion
   }
 
   async function moveSelectedSlot(fromSlot: number, toSlot: number): Promise<void> {
+    // 操作中は DnD の重複 IPC を送らない
     if (!selectedContainer || isBusy || isMovingSlot) {
-      // 操作中は DnD の重複 IPC を送らない
       return
     }
 
     const targetContainerId = selectedContainer.id
     setIsMovingSlot(true)
     try {
+      // メインプロセスへスロット移動を依頼する
       const updated = await window.worldChest.moveSlot({
         containerId: targetContainerId,
         fromSlot,
         toSlot
       })
+      // 移動成功時のみ UI を更新する
       if (updated) {
+        // DnD 中に別コンテナへ切り替わっていない場合だけ画面へ反映する
         if (isSelectedContainer(targetContainerId)) {
-          // DnD 中に別コンテナへ切り替わっていない場合だけ画面へ反映する
           updateContainer(updated)
           await refreshSaveStatus()
           selectSlot(toSlot)
           setStatusMessage(`Slot ${fromSlot} → ${toSlot} に移動（未保存）`)
         }
+      // 移動失敗時はエラーメッセージを表示する
       } else {
         setStatusMessage('スロットの移動に失敗しました。再スキャンしてからお試しください')
       }
@@ -344,17 +372,19 @@ export default function App(): JSX.Element {
   }
 
   async function handleSlotUpdated(container: NonNullable<typeof selectedContainer>, targetSlot: number | undefined): Promise<void> {
+    // 操作中に到着した古い更新結果は UI へ反映しない
     if (isBusy) {
-      // 操作中に到着した古い更新結果は UI へ反映しない
       return
     }
     updateContainer(container)
     await refreshSaveStatus()
+    // 移動先スロットが指定されていれば選択を追従させる
     if (targetSlot !== undefined) {
       selectSlot(targetSlot)
     }
 
     let message = `Slot ${selectedSlot} を更新しました（未保存）`
+    // スロット番号が変わった場合は移動メッセージに差し替える
     if (targetSlot !== undefined && targetSlot !== selectedSlot) {
       message = `Slot ${selectedSlot} → ${targetSlot} に移動（未保存）`
     }

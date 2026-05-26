@@ -8,6 +8,7 @@ type ListEntry = { type: 'compound'; value: NbtCompound }
 const NUMERIC_TAG_TYPES = ['byte', 'short', 'int', 'long', 'float', 'double']
 
 function entryCompound(entry: unknown): NbtCompound {
+  // list エントリが compound タグ形式なら value を返す
   if (typeof entry === 'object' && entry !== null && 'type' in entry && (entry as { type: string }).type === 'compound') {
     return (entry as ListEntry).value
   }
@@ -20,9 +21,11 @@ function getItemsListEntries(owner: NbtCompound): unknown[] {
 }
 
 function setSlotField(compound: NbtCompound | undefined, slot: number): void {
+  // compound が無い場合は何もしない
   if (!compound) {
     return
   }
+  // 既存 Slot タグがあれば値を更新する
   if (compound.Slot) {
     compound.Slot.value = slot
     return
@@ -31,9 +34,11 @@ function setSlotField(compound: NbtCompound | undefined, slot: number): void {
 }
 
 function setItemIdField(compound: NbtCompound | undefined, itemId: string): void {
+  // compound が無い場合は何もしない
   if (!compound) {
     return
   }
+  // 既存 id タグがあれば値を更新する
   if (compound.id) {
     compound.id.value = itemId
     return
@@ -42,13 +47,16 @@ function setItemIdField(compound: NbtCompound | undefined, itemId: string): void
 }
 
 function setCountField(compound: NbtCompound | undefined, count: number): void {
+  // compound が無い場合は何もしない
   if (!compound) {
     return
   }
+  // 新形式 count タグがあれば値を更新する
   if (compound.count) {
     compound.count.value = count
     return
   }
+  // 旧形式 Count タグがあれば値を更新する
   if (compound.Count) {
     compound.Count.value = count
     return
@@ -61,6 +69,7 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 function inferNumberTagType(existing: NbtTag | undefined): string {
+  // 既存タグがある場合は型を維持する
   if (existing !== undefined) {
     // 既存タグが数値型なら、保存時に元の NBT 型を維持する
     if (NUMERIC_TAG_TYPES.includes(existing.type)) {
@@ -71,11 +80,13 @@ function inferNumberTagType(existing: NbtTag | undefined): string {
 }
 
 function convertListEntry(entry: unknown, itemType: string): unknown {
+  // compound list の要素は NBT compound へ変換する
   if (itemType === 'compound' && isPlainObject(entry)) {
     // compound list の要素は NBT compound タグ形式へ変換する
     return { type: 'compound', value: plainObjectToCompound(entry, undefined) }
   }
 
+  // byte list の boolean 要素は 0/1 に変換する
   if (itemType === 'byte' && typeof entry === 'boolean') {
     // boolean は NBT byte list の 0/1 として扱う
     if (entry) {
@@ -90,6 +101,7 @@ function convertListEntry(entry: unknown, itemType: string): unknown {
 function plainArrayToListTag(values: unknown[], existing: NbtTag | undefined): NbtTag {
   const itemType = inferListItemType(values, existing)
   const listEntries: unknown[] = []
+  // JSON 配列の各要素を list エントリへ変換する
   for (const entry of values) {
     // JSON 配列を NBT list の値へ変換する
     listEntries.push(convertListEntry(entry, itemType))
@@ -98,6 +110,7 @@ function plainArrayToListTag(values: unknown[], existing: NbtTag | undefined): N
 }
 
 function existingCompoundValue(existing: NbtTag | undefined): NbtCompound | undefined {
+  // 既存 compound タグの value を返す
   if (existing !== undefined && existing.type === 'compound') {
     // 既存 compound の子タグ型をできるだけ維持する
     return existing.value as NbtCompound
@@ -106,24 +119,30 @@ function existingCompoundValue(existing: NbtTag | undefined): NbtCompound | unde
 }
 
 function inferListItemType(values: unknown[], existing: NbtTag | undefined): string {
+  // 既存 list タグの要素型があればそれを使う
   if (existing !== undefined && existing.type === 'list') {
     const listValue = existing.value as { type?: string }
+    // list の type フィールドが文字列なら採用する
     if (typeof listValue.type === 'string') {
       return listValue.type
     }
   }
 
+  // 既存 list 型が無い場合は値から要素型を推定する
   for (const value of values) {
     // 最初の値から list の要素型を推定する
     if (isPlainObject(value)) {
       return 'compound'
     }
+    // 文字列要素なら string list とする
     if (typeof value === 'string') {
       return 'string'
     }
+    // 数値要素なら int list とする
     if (typeof value === 'number') {
       return 'int'
     }
+    // 真偽値要素なら byte list とする
     if (typeof value === 'boolean') {
       return 'byte'
     }
@@ -132,26 +151,30 @@ function inferListItemType(values: unknown[], existing: NbtTag | undefined): str
 }
 
 function plainValueToTag(value: unknown, existing: NbtTag | undefined): NbtTag {
+  // JSON 配列は NBT list タグへ変換する
   if (Array.isArray(value)) {
-    // JSON 配列は NBT list タグへ変換する
     return plainArrayToListTag(value, existing)
   }
 
+  // JSON オブジェクトは NBT compound タグへ変換する
   if (isPlainObject(value)) {
-    // JSON オブジェクトは NBT compound タグへ変換する
     return { type: 'compound', value: plainObjectToCompound(value, existingCompoundValue(existing)) }
   }
 
+  // 文字列は string タグへ変換する
   if (typeof value === 'string') {
     return { type: 'string', value }
   }
 
+  // 数値は既存型を維持した数値タグへ変換する
   if (typeof value === 'number') {
     return { type: inferNumberTagType(existing), value }
   }
 
+  // 真偽値は byte タグへ変換する
   if (typeof value === 'boolean') {
     let byteValue = 0
+    // true は 1、false は 0 として保存する
     if (value) {
       byteValue = 1
     }
@@ -166,9 +189,11 @@ function plainObjectToCompound(
   existing: NbtCompound | undefined
 ): NbtCompound {
   const compound: NbtCompound = {}
+  // JSON の各キーを NBT タグへ変換する
   for (const [key, value] of Object.entries(raw)) {
     // 既存タグがある場合は型を保ちながら JSON の値を反映する
     let existingTag: NbtTag | undefined
+    // 既存 compound に同名キーがあれば型情報を引き継ぐ
     if (existing !== undefined) {
       existingTag = existing[key]
     }
@@ -179,10 +204,12 @@ function plainObjectToCompound(
 
 function applyRawItemView(compound: NbtCompound, item: ItemStackView): void {
   const nextCompound = plainObjectToCompound(item.raw, compound)
+  // JSON から削除されたキーを NBT からも削除する
   for (const key of Object.keys(compound)) {
     // JSON から削除されたキーを NBT からも削除する
     delete compound[key]
   }
+  // 生成した NBT タグを既存 compound へ反映する
   for (const [key, value] of Object.entries(nextCompound)) {
     // JSON から生成した NBT タグを既存 compound に反映する
     compound[key] = value
@@ -190,6 +217,7 @@ function applyRawItemView(compound: NbtCompound, item: ItemStackView): void {
 }
 
 function applyItemView(compound: NbtCompound | undefined, item: ItemStackView): void {
+  // compound が無い場合は何もしない
   if (!compound) {
     return
   }
@@ -208,13 +236,16 @@ function createItemCompound(item: ItemStackView): NbtCompound {
 }
 
 function findEntryIndexBySlot(entries: unknown[], slot: number): number {
+  // 各エントリの Slot 値を照合してインデックスを探す
   for (let index = 0; index < entries.length; index += 1) {
     const compound = entryCompound(entries[index])
     const slotValue = getInt(compound, 'Slot')
     let effectiveSlot = -1
+    // Slot フィールドがあれば有効スロット番号として使う
     if (slotValue !== undefined) {
       effectiveSlot = slotValue
     }
+    // 対象スロットと一致したエントリのインデックスを返す
     if (effectiveSlot === slot) {
       return index
     }
@@ -249,12 +280,16 @@ export function updateSlotInCompound(owner: NbtCompound, slot: number, item: Ite
   const entries = getItemsListEntries(owner)
   const index = findEntryIndexBySlot(entries, slot)
 
+  // 有効なアイテムの場合は更新または追加する
   if (item && item.itemId !== MinecraftIds.ITEM_AIR && item.count > 0) {
+    // 既存エントリがあれば in-place 更新する
     if (index >= 0) {
       applyItemView(entryCompound(entries[index]), item)
+    // 既存エントリがなければ新規追加する
     } else {
       entries.push({ type: 'compound', value: createItemCompound(item) })
     }
+  // 空スロット指定で既存エントリがあれば削除する
   } else if (index >= 0) {
     entries.splice(index, 1)
   }
@@ -283,11 +318,13 @@ export function transferSlotItem(
   fromSlot: number,
   item: ItemStackView | null
 ): ItemStackView[] {
+  // 空スロットまたは air アイテムの場合は削除処理へ委譲する
   if (!item || item.itemId === MinecraftIds.ITEM_AIR || item.count <= 0) {
     return updateSlotInCompound(owner, fromSlot, null)
   }
 
   const toSlot = item.slot
+  // 移動元と移動先が同じ場合は単純更新する
   if (fromSlot === toSlot) {
     return updateSlotInCompound(owner, fromSlot, item)
   }
@@ -296,9 +333,12 @@ export function transferSlotItem(
   const fromIndex = findEntryIndexBySlot(entries, fromSlot)
   const toIndex = findEntryIndexBySlot(entries, toSlot)
 
+  // 移動元エントリが存在しない場合は移動先へ直接書き込む
   if (fromIndex < 0) {
+    // 移動先に既存エントリがあれば上書きする
     if (toIndex >= 0) {
       applyItemView(entryCompound(entries[toIndex]), item)
+    // 移動先が空なら新規エントリを追加する
     } else {
       entries.push({ type: 'compound', value: createItemCompound(item) })
     }
@@ -306,6 +346,7 @@ export function transferSlotItem(
   }
 
   const fromCompound = entryCompound(entries[fromIndex])
+  // 移動先が空スロットの場合は移動元の Slot を更新する
   if (toIndex < 0) {
     applyItemView(fromCompound, item)
     return parseItemsList(getListItems(owner, 'Items'))
@@ -327,12 +368,14 @@ export function transferSlotItem(
  * @returns 更新後の Items 一覧
  */
 export function moveSlotInCompound(owner: NbtCompound, fromSlot: number, toSlot: number): ItemStackView[] {
+  // 移動元と移動先が同じ場合は変更なし
   if (fromSlot === toSlot) {
     return parseItemsList(getListItems(owner, 'Items'))
   }
 
   const entries = getItemsListEntries(owner)
   const fromIndex = findEntryIndexBySlot(entries, fromSlot)
+  // 移動元にアイテムが無い場合は変更なし
   if (fromIndex < 0) {
     return parseItemsList(getListItems(owner, 'Items'))
   }
@@ -340,6 +383,7 @@ export function moveSlotInCompound(owner: NbtCompound, fromSlot: number, toSlot:
   const toIndex = findEntryIndexBySlot(entries, toSlot)
   const fromCompound = entryCompound(entries[fromIndex])
 
+  // 移動先が空スロットの場合は Slot 番号だけ更新する
   if (toIndex < 0) {
     setSlotField(fromCompound, toSlot)
     return parseItemsList(getListItems(owner, 'Items'))
@@ -360,6 +404,7 @@ export function moveSlotInCompound(owner: NbtCompound, fromSlot: number, toSlot:
  */
 export function ensureItemsList(owner: NbtCompound): void {
   const itemsField = getCompoundField(owner, 'Items')
+  // Items リストが無い、または list 型でない場合は空リストを作成する
   if (!itemsField || !isList(itemsField)) {
     owner.Items = { type: 'list', value: { type: 'compound', value: [] } }
   }

@@ -63,6 +63,7 @@ function pathExists(target: string): boolean {
 
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url)
+  // HTTP エラー時は例外を投げる
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${url}`)
   }
@@ -71,6 +72,7 @@ async function fetchJson<T>(url: string): Promise<T> {
 
 async function downloadBuffer(url: string): Promise<Buffer> {
   const response = await fetch(url)
+  // HTTP エラー時は例外を投げる
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${url}`)
   }
@@ -82,6 +84,7 @@ function extractAssetsFromJar(jarBuffer: Buffer, destination: string): number {
   const zip = new AdmZip(jarBuffer)
   let extracted = 0
 
+  // ZIP 内の各エントリから assets を展開する
   for (const entry of zip.getEntries()) {
     // assets/ 配下のファイルのみ展開する
     if (!entry.entryName.startsWith('assets/') || entry.isDirectory) {
@@ -104,6 +107,7 @@ async function downloadVanillaAssets(onProgress?: ProgressCallback): Promise<str
 
   const releaseId = manifest.latest.release
   const versionEntry = manifest.versions.find((entry) => entry.id === releaseId)
+  // リリースバージョンが manifest に存在しない場合は失敗する
   if (!versionEntry) {
     throw new Error(`Release version not found: ${releaseId}`)
   }
@@ -111,8 +115,10 @@ async function downloadVanillaAssets(onProgress?: ProgressCallback): Promise<str
   const destination = vanillaPackRoot()
   const versionFile = path.join(destination, 'version')
 
+  // キャッシュ済みバージョンが有効なら再ダウンロードをスキップする
   if (pathExists(versionFile)) {
     const cachedVersion = await readFile(versionFile, 'utf8')
+    // バージョンと assets ディレクトリが一致すればキャッシュを使う
     if (cachedVersion === releaseId && pathExists(path.join(destination, 'assets'))) {
       vanillaVersion = releaseId
       logger.info('assets', 'キャッシュ済みバニラ assets を使用', { releaseId })
@@ -129,12 +135,14 @@ async function downloadVanillaAssets(onProgress?: ProgressCallback): Promise<str
   reportProgress(onProgress, 'assets-extract', 60, 100, 'assets を展開中...')
 
   const tempPath = path.join(path.dirname(destination), '_temp_vanilla')
+  // 前回の一時ディレクトリが残っていれば削除する
   if (pathExists(tempPath)) {
     await rm(tempPath, { recursive: true, force: true })
   }
   await mkdir(tempPath, { recursive: true })
 
   const extracted = extractAssetsFromJar(jarBuffer, tempPath)
+  // assets が 1 件も展開されなかった場合は失敗する
   if (extracted === 0) {
     logger.error('assets', 'client.jar から assets が見つからない')
     throw new Error('client.jar から assets が見つかりませんでした')
@@ -142,6 +150,7 @@ async function downloadVanillaAssets(onProgress?: ProgressCallback): Promise<str
 
   logger.info('assets', 'client.jar から assets を展開', { releaseId, extractedFileCount: extracted })
 
+  // 既存のバニラ assets ディレクトリがあれば削除する
   if (pathExists(destination)) {
     await rm(destination, { recursive: true, force: true })
   }
@@ -161,6 +170,7 @@ async function downloadVanillaAssets(onProgress?: ProgressCallback): Promise<str
  * @param onProgress - 進捗コールバック
  */
 export async function ensureVanillaAssets(onProgress?: ProgressCallback): Promise<void> {
+  // 既に取得処理が実行中なら同じ Promise を返す
   if (ensurePromise) {
     logger.debug('assets', 'バニラ assets 取得は既に実行中')
     return ensurePromise
@@ -187,6 +197,7 @@ export async function ensureVanillaAssets(onProgress?: ProgressCallback): Promis
  */
 export async function loadWorldResourcePack(worldPath: string, onProgress?: ProgressCallback): Promise<boolean> {
   const resourcesZip = path.join(worldPath, 'resources.zip')
+  // resources.zip が存在しない場合はワールド pack なし
   if (!pathExists(resourcesZip)) {
     worldPackRoot = null
     logger.debug('assets', 'ワールド resource pack なし', { worldPath })
@@ -199,6 +210,7 @@ export async function loadWorldResourcePack(worldPath: string, onProgress?: Prog
   reportProgress(onProgress, 'world-pack', 0, 100, 'ワールド resources.zip を展開中...')
 
   const zip = new AdmZip(await readFile(resourcesZip))
+  // 既存の展開先があれば削除してから再展開する
   if (pathExists(destination)) {
     await rm(destination, { recursive: true, force: true })
   }
@@ -218,9 +230,11 @@ export async function loadWorldResourcePack(worldPath: string, onProgress?: Prog
 export function getAssetPackRoots(): string[] {
   const roots: string[] = []
   const vanilla = vanillaPackRoot()
+  // バニラ assets が存在すれば解決候補に追加する
   if (pathExists(vanilla)) {
     roots.push(vanilla)
   }
+  // ワールド pack が存在すれば後勝ちで追加する
   if (worldPackRoot && pathExists(worldPackRoot)) {
     roots.push(worldPackRoot)
   }

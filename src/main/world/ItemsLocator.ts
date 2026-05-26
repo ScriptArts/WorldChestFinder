@@ -24,13 +24,16 @@ function extractPosition(compound: NbtCompound): { x: number; y: number; z: numb
   const y = getIntFirst(compound, 'y', 'Y')
   const z = getIntFirst(compound, 'z', 'Z')
 
+  // 座標が直接入っている場合はそのまま返す
   if (x !== undefined && y !== undefined && z !== undefined) {
     return { x, y, z }
   }
 
   const posField = getCompoundFieldFirst(compound, 'Pos', 'pos', 'Position')
+  // Pos リストから座標を復元する
   if (posField && posField.type === 'list') {
     const values = (posField.value as { value: number[] }).value
+    // 3 要素以上あれば XYZ 座標として採用する
     if (values.length >= 3) {
       return {
         x: Math.floor(values[0]),
@@ -55,14 +58,17 @@ export function findItemsHits(chunkNbt: NbtCompound): ItemsHit[] {
   // Entities / block_entities / TileEntities を順に走査する
   for (const source of SOURCE_LISTS) {
     const listField = getCompoundFieldFirst(chunkNbt, source.key)
+    // 対象リストが存在しない、または list 型でない場合はスキップする
     if (!listField || !isList(listField)) {
       continue
     }
 
     const entries = getListItems(chunkNbt, source.key)
+    // 各エントリから Items タグを持つ compound を探す
     for (let index = 0; index < entries.length; index += 1) {
       const compound = entries[index]
       const itemsField = getCompoundFieldFirst(compound, 'Items')
+      // Items タグが無い、または list 型でない場合はスキップする
       if (!itemsField || !isList(itemsField)) {
         continue
       }
@@ -96,6 +102,7 @@ export function hitsToContainers(
   }
 ): ContainerRecord[] {
   const containers: ContainerRecord[] = []
+  // 各 ItemsHit を ContainerRecord に変換する
   for (const hit of hits) {
     const blockEntityId = coalesce(getString(hit.ownerCompound, 'id'), 'unknown')
     const items = parseItemsList(getListItems(hit.ownerCompound, 'Items'))
@@ -104,8 +111,8 @@ export function hitsToContainers(
     let posY = 0
     let posZ = 0
     let positionKnown = false
+    // NBT から座標を取得できた場合だけ表示座標として採用する
     if (position !== null) {
-      // NBT から座標を取得できた場合だけ表示座標として採用する
       posX = position.x
       posY = position.y
       posZ = position.z

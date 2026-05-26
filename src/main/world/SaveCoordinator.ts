@@ -11,24 +11,24 @@ function getDirtyChunkKeys(
   region: LoadedRegion,
   dirtyChunksByRegion: Map<string, Set<string>> | undefined
 ): Set<string> | undefined {
+  // リージョン単位の dirty chunk 指定があれば部分書き込みに使う
   if (dirtyChunksByRegion !== undefined) {
-    // リージョン単位の dirty chunk 指定があれば部分書き込みに使う
     return dirtyChunksByRegion.get(region.filePath)
   }
   return undefined
 }
 
 function getDirtyChunkCount(region: LoadedRegion, dirtyChunkKeys: Set<string> | undefined): number {
+  // 部分書き込み時は dirty chunk 数を返す
   if (dirtyChunkKeys !== undefined) {
-    // 部分書き込み時は dirty chunk 数をログへ出す
     return dirtyChunkKeys.size
   }
   return region.chunks.size
 }
 
 function buildFinishMessage(savedCount: number, errorCount: number): string {
+  // 失敗がある場合は保存件数よりエラー件数を優先して表示する
   if (errorCount > 0) {
-    // 失敗がある場合は保存件数よりエラー件数を優先して表示する
     return `${errorCount} 件のエラー`
   }
   return `${savedCount} 件を保存しました`
@@ -52,6 +52,7 @@ export async function saveModifiedRegions(
   const errors: string[] = []
   const total = regionList.length
 
+  // 保存対象リージョンが 0 件の場合は即座に完了する
   if (total === 0) {
     logger.criticalInfo('save', '保存対象リージョンなし')
     invokeOptional(onProgress, {

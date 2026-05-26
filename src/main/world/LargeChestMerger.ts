@@ -45,6 +45,7 @@ function orderPair(a: ContainerRecord, b: ContainerRecord): [ContainerRecord, Co
   if (a.posX < b.posX) {
     return [a, b]
   }
+  // X 座標が大きいチェストを後方側にする
   if (a.posX > b.posX) {
     return [b, a]
   }
@@ -52,6 +53,7 @@ function orderPair(a: ContainerRecord, b: ContainerRecord): [ContainerRecord, Co
   if (a.posZ < b.posZ) {
     return [a, b]
   }
+  // Z 座標が大きいチェストを後方側にする
   if (a.posZ > b.posZ) {
     return [b, a]
   }

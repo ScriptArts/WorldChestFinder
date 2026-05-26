@@ -36,9 +36,11 @@ function chunkKey(localX: number, localZ: number): string {
 }
 
 async function decompressChunk(data: Buffer, compression: number): Promise<Buffer> {
+  // gzip 圧縮の場合は gunzip で展開する
   if (compression === 1) {
     return gunzipAsync(data) as Promise<Buffer>
   }
+  // zlib 圧縮の場合は inflate で展開する
   if (compression === 2) {
     return inflateAsync(data) as Promise<Buffer>
   }
@@ -46,9 +48,11 @@ async function decompressChunk(data: Buffer, compression: number): Promise<Buffe
 }
 
 async function compressChunk(data: Buffer, compression: number): Promise<Buffer> {
+  // gzip 圧縮の場合は gzip で圧縮する
   if (compression === 1) {
     return gzipAsync(data) as Promise<Buffer>
   }
+  // zlib 圧縮の場合は deflate で圧縮する
   if (compression === 2) {
     return deflateAsync(data) as Promise<Buffer>
   }
@@ -68,15 +72,18 @@ export async function readRegion(filePath: string): Promise<LoadedRegion> {
   let skippedChunks = 0
   const readErrors: string[] = []
 
+  // リージョンヘッダーの 1024 スロットを走査する
   for (let index = 0; index < 1024; index += 1) {
     const offset = index * 4
     const location = buffer.readUInt32BE(offset)
+    // チャンク未使用スロットはスキップする
     if (location === 0) {
       continue
     }
 
     const sectorOffset = (location >> 8) * SECTOR_SIZE
     const sectorCount = location & 0xff
+    // 不正なセクタ情報のチャンクはスキップする
     if (sectorOffset <= 0 || sectorCount <= 0) {
       continue
     }
@@ -126,8 +133,10 @@ export async function writeRegion(region: LoadedRegion, dirtyChunkKeys?: Set<str
   let buffer = Buffer.from(region.buffer)
   const partialWrite = dirtyChunkKeys !== undefined
   let chunksToWrite: ChunkData[]
+  // 部分書き込み時は dirty チャンクだけを対象にする
   if (partialWrite) {
     chunksToWrite = [...region.chunks.values()].filter((chunk) => dirtyChunkKeys.has(chunkKey(chunk.localX, chunk.localZ)))
+  // 全チャンク書き込み時は全エントリを対象にする
   } else {
     chunksToWrite = [...region.chunks.values()]
   }
@@ -138,20 +147,24 @@ export async function writeRegion(region: LoadedRegion, dirtyChunkKeys?: Set<str
     chunkCount: chunksToWrite.length
   })
 
+  // 書き込み対象チャンクが 0 件の場合は失敗する
   if (chunksToWrite.length === 0) {
     throw new Error('書き込むチャンクがありません')
   }
 
+  // 全書き込み時はヘッダーをクリアする
   if (!partialWrite) {
     buffer.fill(0, 0, HEADER_SIZE)
   }
 
   let nextSector = Math.ceil(buffer.length / SECTOR_SIZE)
+  // 最小セクタ位置を 2 に保つ
   if (nextSector < 2) {
     nextSector = 2
   }
 
   let chunkIndex = 0
+  // 対象チャンクを順番にシリアライズしてバッファへ書き込む
   for (const chunk of chunksToWrite) {
     chunkIndex += 1
     logger.criticalInfo('region', 'チャンク NBT シリアライズ開始', {
@@ -175,6 +188,7 @@ export async function writeRegion(region: LoadedRegion, dirtyChunkKeys?: Set<str
     const sectorsNeeded = Math.ceil((chunkLength + 4) / SECTOR_SIZE)
 
     const requiredSize = (nextSector + sectorsNeeded) * SECTOR_SIZE
+    // バッファ容量が不足する場合は拡張する
     if (buffer.length < requiredSize) {
       const expanded = Buffer.alloc(requiredSize)
       buffer.copy(expanded)

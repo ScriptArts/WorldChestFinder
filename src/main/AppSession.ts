@@ -29,8 +29,10 @@ function extractPosition(compound: NbtCompound): { x: number; y: number; z: numb
   }
 
   const posField = getCompoundFieldFirst(compound, 'Pos', 'pos', 'Position')
+  // Pos リストから座標を復元する
   if (posField && posField.type === 'list') {
     const values = (posField.value as { value: number[] }).value
+    // 3 要素以上あれば XYZ 座標として採用する
     if (values.length >= 3) {
       return { x: Math.floor(values[0]), y: Math.floor(values[1]), z: Math.floor(values[2]) }
     }
@@ -52,23 +54,27 @@ function resolveOwnerCompound(
   binding: ContainerBinding
 ): NbtCompound | null {
   const region = session.regions.get(binding.regionFile)
+  // 対象リージョンが未ロードの場合は owner を解決できない
   if (!region) {
     return null
   }
 
   const chunk = region.chunks.get(`${binding.localX},${binding.localZ}`)
+  // 対象チャンクが未ロードの場合は owner を解決できない
   if (!chunk) {
     return null
   }
 
   const hits = findItemsHits(chunk.nbt)
   const byPath = hits.find((hit) => hit.nbtPath === container.nbtPath)
+  // NBT パスが一致する Items owner が見つかった場合は返す
   if (byPath) {
     return byPath.ownerCompound
   }
 
   // NBT パスが一致しない場合は座標でコンテナを特定する
   for (const hit of hits) {
+    // 座標が一致する Items owner を返す
     if (positionMatches(container, hit.ownerCompound)) {
       return hit.ownerCompound
     }
@@ -79,8 +85,8 @@ function resolveOwnerCompound(
 
 function positionMatches(container: ContainerRecord, compound: NbtCompound): boolean {
   const position = extractPosition(compound)
+  // 座標が一致する場合だけ同一コンテナとみなす
   if (position !== null && position.x === container.posX && position.y === container.posY && position.z === container.posZ) {
-    // 座標が取得でき、コンテナ座標と一致する場合だけ同一コンテナとみなす
     return true
   }
   return false
@@ -192,6 +198,7 @@ export class AppSession {
     const startedAt = Date.now()
     logger.info('session', 'ワールドスキャン開始', { worldPath })
 
+    // 未保存変更がある場合は再スキャンを拒否する
     if (this.dirtyRegions.size > 0) {
       logger.warn('session', '未保存変更があるためスキャンを拒否', {
         pendingRegionCount: this.dirtyRegions.size
@@ -211,6 +218,7 @@ export class AppSession {
       containerCount: result.containers.length,
       errorCount: result.errors.length
     })
+    // スキャン中にエラーがあれば警告ログを出す
     if (result.errors.length > 0) {
       logger.warn('session', 'スキャン中にエラーが発生', { errors: result.errors.slice(0, 20) })
     }
@@ -224,11 +232,13 @@ export class AppSession {
    * @returns ロード済みリージョン。セッション未初期化時は null
    */
   private async ensureRegionLoaded(regionFile: string): Promise<LoadedRegion | null> {
+    // セッション未初期化時はロードできない
     if (!this.session) {
       return null
     }
 
     const cached = this.session.regions.get(regionFile)
+    // キャッシュ済みリージョンがあればそれを返す
     if (cached) {
       return cached
     }
@@ -250,8 +260,8 @@ export class AppSession {
 
     const chunkKeyValue = chunkKey(binding.localX, binding.localZ)
     let dirtyChunks = this.dirtyChunkKeys.get(binding.regionFile)
+    // 初回変更のリージョンには dirty chunk 集合を作成する
     if (dirtyChunks === undefined) {
-      // 初回変更のリージョンには dirty chunk 集合を作成する
       dirtyChunks = new Set<string>()
     }
     dirtyChunks.add(chunkKeyValue)
@@ -275,16 +285,19 @@ export class AppSession {
     )[0]
 
     let nextItems = updatedItems
+    // 更新結果が空配列の場合は再パース結果を優先する
     if (updatedItems.length === 0) {
-      // mutate 側が空配列を返した場合は再パース結果を優先する
+      // 再パース結果があればそれを採用する
       if (refreshed !== undefined) {
         nextItems = refreshed.items
+      // 再パースも失敗した場合は空配列とする
       } else {
         nextItems = []
       }
     }
 
     let nextSlotCount = container.slotCount
+    // 再パースできた場合はスロット数も最新化する
     if (refreshed !== undefined) {
       // 再パースできた場合は推定スロット数も最新化する
       nextSlotCount = refreshed.slotCount
@@ -304,6 +317,7 @@ export class AppSession {
    * @returns コンテナ配列
    */
   getContainers(filter?: SearchFilter): ContainerRecord[] {
+    // セッション未初期化時は空配列を返す
     if (!this.session) {
       return []
     }
@@ -318,15 +332,19 @@ export class AppSession {
    */
   async updateSlot(update: SlotUpdate): Promise<ContainerRecord | null> {
     return this.runExclusive(async () => {
+      // セッション未初期化時は更新できない
       if (!this.session) return null
       const containerIndex = this.session.containers.findIndex((e) => e.id === update.containerId)
+      // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
       const container = this.session.containers[containerIndex]
 
+      // ラージチェストの場合は片側 owner を更新する
       if (container.largeChest) {
         return this.mutateLargeChest(containerIndex, update.slot, (owner) => {
           const localSlot = toLocalSlot(update.slot)
           let localItem: ItemStackView | null = null
+          // 更新アイテムがある場合はローカルスロット番号を付与する
           if (update.item) {
             localItem = { ...update.item, slot: localSlot, raw: { ...update.item.raw, Slot: localSlot } }
           }
@@ -348,11 +366,14 @@ export class AppSession {
    */
   async moveSlot(move: SlotMove): Promise<ContainerRecord | null> {
     return this.runExclusive(async () => {
+      // セッション未初期化時は移動できない
       if (!this.session) return null
       const containerIndex = this.session.containers.findIndex((e) => e.id === move.containerId)
+      // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
       const container = this.session.containers[containerIndex]
 
+      // ラージチェストの場合は跨ぎ移動を処理する
       if (container.largeChest) {
         return this.mutateLargeChestMove(containerIndex, move.fromSlot, move.toSlot)
       }
@@ -374,23 +395,28 @@ export class AppSession {
     containerId: string,
     mutate: (owner: NbtCompound, container: ContainerRecord) => ItemStackView[]
   ): Promise<ContainerRecord | null> {
+    // セッション未初期化時は変更できない
     if (!this.session) {
       return null
     }
 
     const containerIndex = this.session.containers.findIndex((entry) => entry.id === containerId)
+    // 対象コンテナが見つからない場合は null を返す
     if (containerIndex < 0) {
       return null
     }
 
     const container = this.session.containers[containerIndex]
     const binding = this.session.bindings.get(container.id)
+    // binding が見つからない場合は変更できない
     if (!binding) {
       return null
     }
 
+    // 編集対象リージョンを遅延ロードする
     await this.ensureRegionLoaded(binding.regionFile)
     const owner = resolveOwnerCompound(container, this.session, binding)
+    // owner compound が見つからない場合は変更できない
     if (!owner) {
       return null
     }
@@ -430,6 +456,7 @@ export class AppSession {
     // 対象スロットが属する片側チェストを選ぶ
     if (side === 'primary') {
       half = pair.primary
+    // secondary 側スロットの場合は secondary half を選ぶ
     } else {
       half = pair.secondary
     }
@@ -486,6 +513,7 @@ export class AppSession {
     // 移動元スロットが属する片側チェストを選ぶ
     if (fromSide === 'primary') {
       fromHalf = pair.primary
+    // secondary 側が移動元の場合
     } else {
       fromHalf = pair.secondary
     }
@@ -494,6 +522,7 @@ export class AppSession {
     // 移動先スロットが属する片側チェストを選ぶ
     if (toSide === 'primary') {
       toHalf = pair.primary
+    // secondary 側が移動先の場合
     } else {
       toHalf = pair.secondary
     }
@@ -561,6 +590,7 @@ export class AppSession {
     // primary owner が見つかった場合だけ Items を読み直す
     if (primaryOwner) {
       primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'))
+    // primary owner が見つからない場合は空配列とする
     } else {
       primaryItems = []
     }
@@ -569,6 +599,7 @@ export class AppSession {
     // secondary owner が見つかった場合だけ Items を読み直す
     if (secondaryOwner) {
       secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'))
+    // secondary owner が見つからない場合は空配列とする
     } else {
       secondaryItems = []
     }
@@ -608,11 +639,13 @@ export class AppSession {
    */
   private async saveChangesExclusive(onProgress?: SaveProgressCallback): Promise<SaveReport> {
     const startedAt = Date.now()
+    // セッション未初期化時は保存できない
     if (!this.session) {
       logger.warn('session', '保存失敗: ワールド未読み込み')
       return { success: false, savedFiles: [], errors: ['ワールドが読み込まれていません。先にスキャンしてください。'] }
     }
 
+    // 変更が無い場合は保存をスキップする
     if (this.dirtyRegions.size === 0) {
       logger.info('session', '保存スキップ: 変更なし')
       invokeOptional(onProgress, {
@@ -626,13 +659,16 @@ export class AppSession {
 
     // dirty なリージョンをメモリ上の LoadedRegion に解決する
     const regionsToSave: LoadedRegion[] = []
+    // dirty リージョンをメモリ上の LoadedRegion に解決する
     for (const filePath of this.dirtyRegions) {
       const region = this.session.regions.get(filePath)
+      // メモリ上に存在するリージョンだけ保存対象に追加する
       if (region !== undefined) {
         regionsToSave.push(region)
       }
     }
 
+    // 保存対象リージョンを 1 件も解決できなかった場合は失敗する
     if (regionsToSave.length === 0) {
       logger.error('session', '保存失敗: dirty リージョンをメモリ上で解決できず')
       return {
@@ -650,14 +686,18 @@ export class AppSession {
 
     // 部分書き込み用にチャンク単位の dirty 情報を集める
     const dirtyChunksByRegion = new Map<string, Set<string>>()
+    // 各リージョンの dirty chunk 情報を部分書き込み用に集める
     for (const region of regionsToSave) {
       const keys = this.dirtyChunkKeys.get(region.filePath)
+      // dirty chunk が 1 件以上あるリージョンだけ登録する
       if (keys !== undefined && keys.size > 0) {
         dirtyChunksByRegion.set(region.filePath, keys)
       }
     }
 
+    // 変更済みリージョンをディスクへ書き込む
     const report = await saveModifiedRegions(regionsToSave, onProgress, dirtyChunksByRegion)
+    // 保存成功時は dirty 状態をクリアする
     if (report.success) {
       this.dirtyRegions.clear()
       this.dirtyChunkKeys.clear()
@@ -665,7 +705,9 @@ export class AppSession {
         durationMs: Date.now() - startedAt,
         savedFileCount: report.savedFiles.length
       })
+    // 一部失敗時は成功済みリージョンだけ dirty から外す
     } else {
+      // 成功済みリージョンを dirty 集合から削除する
       for (const savedFile of report.savedFiles) {
         // 成功済みリージョンは再保存対象から外す
         this.dirtyRegions.delete(savedFile)
@@ -697,6 +739,7 @@ export class AppSession {
    * @returns ワールドパス。未スキャン時は null
    */
   getWorldPath(): string | null {
+    // セッション未初期化時は null を返す
     if (this.session === null) {
       return null
     }

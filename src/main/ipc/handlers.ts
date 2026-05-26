@@ -20,6 +20,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function requireWorldPath(value: unknown): string {
+  // 空文字や非文字列のワールドパスは拒否する
   if (typeof value !== 'string' || value.trim() === '') {
     throw new Error('ワールドパスが正しくありません。')
   }
@@ -28,8 +29,8 @@ function requireWorldPath(value: unknown): string {
 
 function requireStringField(record: Record<string, unknown>, key: string, message: string): string {
   const value = record[key]
+  // 文字列必須フィールドが欠けている場合は IPC を拒否する
   if (typeof value !== 'string' || value === '') {
-    // 文字列必須フィールドが欠けている場合は IPC を拒否する
     throw new Error(message)
   }
   return value
@@ -37,14 +38,15 @@ function requireStringField(record: Record<string, unknown>, key: string, messag
 
 function requireIntegerField(record: Record<string, unknown>, key: string, message: string): number {
   const value = record[key]
+  // 整数必須フィールドが欠けている場合は IPC を拒否する
   if (typeof value !== 'number' || !Number.isInteger(value)) {
-    // 整数必須フィールドが欠けている場合は IPC を拒否する
     throw new Error(message)
   }
   return value
 }
 
 function requireSlotUpdate(value: unknown): SlotUpdate {
+  // オブジェクト形式でない更新リクエストは拒否する
   if (!isRecord(value)) {
     throw new Error('スロット更新リクエストが正しくありません。')
   }
@@ -56,6 +58,7 @@ function requireSlotUpdate(value: unknown): SlotUpdate {
 }
 
 function requireSlotMove(value: unknown): SlotMove {
+  // オブジェクト形式でない移動リクエストは拒否する
   if (!isRecord(value)) {
     throw new Error('スロット移動リクエストが正しくありません。')
   }
@@ -68,6 +71,7 @@ function requireSlotMove(value: unknown): SlotMove {
 
 /** 全ウィンドウへ assets 進捗イベントを配信する */
 function broadcastAssetProgress(progress: AssetDownloadProgress): void {
+  // 全ウィンドウへ assets 進捗イベントを配信する
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('assets:download-progress', progress)
   }
@@ -81,6 +85,7 @@ function broadcastSaveProgress(progress: SaveProgress): void {
     total: progress.total,
     message: progress.message
   })
+  // 全ウィンドウへ保存進捗イベントを配信する
   for (const window of BrowserWindow.getAllWindows()) {
     window.webContents.send('world:save-progress', progress)
   }
@@ -105,6 +110,7 @@ export function registerIpcHandlers(): void {
     const result = await dialog.showOpenDialog({
       properties: ['openDirectory']
     })
+    // キャンセルまたは未選択の場合は null を返す
     if (result.canceled || result.filePaths.length === 0) {
       return null
     }
@@ -117,6 +123,7 @@ export function registerIpcHandlers(): void {
     await loadWorldResourcePack(pathValue, broadcastAssetProgress)
 
     return session.scan(pathValue, (progress) => {
+      // 全ウィンドウへスキャン進捗イベントを配信する
       for (const window of BrowserWindow.getAllWindows()) {
         window.webContents.send('world:scan-progress', progress)
       }
@@ -161,12 +168,14 @@ export function registerIpcHandlers(): void {
   })
 
   registerLoggedIpcHandler('assets:resolve-texture', async (_event, itemId: unknown) => {
+    // 空文字や非文字列のアイテム ID は拒否する
     if (typeof itemId !== 'string' || itemId === '') {
       throw new Error('アイテム ID が正しくありません。')
     }
     const itemIdValue = itemId
     await ensureVanillaAssets()
     const texturePath = await resolveItemTexture(itemIdValue)
+    // テクスチャが見つからない場合は null を返す
     if (!texturePath) {
       return null
     }

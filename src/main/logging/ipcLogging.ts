@@ -12,18 +12,23 @@ type IpcHandler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown | P
  * @param args - 引数配列
  */
 function summarizeIpcArgs(channel: string, args: unknown[]): Record<string, unknown> {
+  // テクスチャ解決チャンネルの引数を要約する
   if (channel === 'assets:resolve-texture' && args.length > 0) {
     return { itemId: args[0] }
   }
+  // ワールドスキャンチャンネルの引数を要約する
   if (channel === 'world:scan' && args.length > 0) {
     return { worldPath: args[0] }
   }
+  // コンテナ取得チャンネルの引数を要約する
   if (channel === 'world:get-containers') {
     return { filter: args[0] }
   }
+  // スロット更新チャンネルの引数を要約する
   if (channel === 'world:update-slot' && args.length > 0) {
     return { update: args[0] }
   }
+  // スロット移動チャンネルの引数を要約する
   if (channel === 'world:move-slot' && args.length > 0) {
     return { move: args[0] }
   }
@@ -37,18 +42,23 @@ function summarizeIpcArgs(channel: string, args: unknown[]): Record<string, unkn
  * @param result - ハンドラ戻り値
  */
 function summarizeIpcResult(channel: string, result: unknown): Record<string, unknown> | undefined {
+  // テクスチャ解決結果を要約する
   if (channel === 'assets:resolve-texture') {
+    // テクスチャ未検出の場合
     if (result === null) {
       return { texture: 'not-found' }
     }
     return { texture: 'resolved' }
   }
+  // ワールド選択結果を要約する
   if (channel === 'world:select') {
     return { worldPath: result }
   }
+  // コンテナ一覧結果を要約する
   if (channel === 'world:get-containers' && Array.isArray(result)) {
     return { containerCount: result.length }
   }
+  // スキャン結果を要約する
   if (channel === 'world:scan' && typeof result === 'object' && result !== null) {
     const scanResult = result as ScanResult
     return {
@@ -57,6 +67,7 @@ function summarizeIpcResult(channel: string, result: unknown): Record<string, un
       worldPath: scanResult.worldPath
     }
   }
+  // 保存結果を要約する
   if (channel === 'world:save' && typeof result === 'object' && result !== null) {
     const saveReport = result as { success: boolean; savedFiles: string[]; errors: string[]; nothingToSave?: boolean }
     return {
@@ -66,9 +77,11 @@ function summarizeIpcResult(channel: string, result: unknown): Record<string, un
       nothingToSave: saveReport.nothingToSave === true
     }
   }
+  // 保存ステータス結果を要約する
   if (channel === 'world:get-save-status' && typeof result === 'object' && result !== null) {
     return { status: result }
   }
+  // assets ステータス結果を要約する
   if (channel === 'assets:get-status' || channel === 'assets:ensure-ready') {
     return { status: result }
   }
@@ -85,6 +98,7 @@ export function registerLoggedIpcHandler(channel: string, handler: IpcHandler): 
   ipcMain.handle(channel, async (event, ...args) => {
     const startedAt = Date.now()
     logger.info('ipc', `${channel} 呼び出し`, summarizeIpcArgs(channel, args))
+    // 保存処理前にログをフラッシュする
     if (channel === 'world:save') {
       await flushLogs()
     }
@@ -93,8 +107,10 @@ export function registerLoggedIpcHandler(channel: string, handler: IpcHandler): 
       const result = await handler(event, ...args)
       const durationMs = Date.now() - startedAt
       const summary = summarizeIpcResult(channel, result)
+      // テクスチャ解決は DEBUG レベルで成功ログを出す
       if (channel === 'assets:resolve-texture') {
         logger.debug('ipc', `${channel} 成功`, { durationMs, ...summary })
+      // それ以外のチャンネルは INFO レベルで成功ログを出す
       } else {
         logger.info('ipc', `${channel} 成功`, { durationMs, ...summary })
       }

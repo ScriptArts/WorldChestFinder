@@ -9,6 +9,7 @@ interface OperationProgressBarProps {
 }
 
 function toPercent(current: number, total: number): number {
+  // 総数が 0 以下なら進捗率は 0 とする
   if (total <= 0) {
     return 0
   }
@@ -16,6 +17,7 @@ function toPercent(current: number, total: number): number {
 }
 
 function progressCountLabel(progress: ProgressLike): string {
+  // 総数が 0 以下なら件数ラベルは表示しない
   if (progress.total <= 0) {
     return ''
   }
@@ -28,12 +30,14 @@ export function OperationProgressBar({ title, progress }: OperationProgressBarPr
   const indeterminate = progress.total <= 0
 
   let progressBar: JSX.Element
+  // 総数不明時は不定進捗バーを表示する
   if (indeterminate) {
     progressBar = (
       <div className="relative h-3 w-full overflow-hidden rounded-full bg-primary/20">
         <div className="absolute inset-y-0 w-1/3 animate-pulse rounded-full bg-primary" />
       </div>
     )
+  // 総数が分かる場合は通常の進捗バーを表示する
   } else {
     progressBar = <Progress value={percent} className="h-3" />
   }

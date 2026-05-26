@@ -16,14 +16,17 @@ const CONTAINER_SLOTS: Record<string, number> = {
 }
 
 function summarizeComponents(components: NbtCompound | undefined): string {
+  // components タグが無い場合は空文字を返す
   if (!components) {
     return ''
   }
   const customName = getString(components, MinecraftIds.COMPONENT_CUSTOM_NAME)
+  // カスタム名があれば表示要約として返す
   if (customName) {
     return customName
   }
   const damage = getInt(components, MinecraftIds.COMPONENT_DAMAGE)
+  // ダメージ値があれば表示要約として返す
   if (damage !== undefined) {
     return `damage=${damage}`
   }
@@ -31,12 +34,15 @@ function summarizeComponents(components: NbtCompound | undefined): string {
 }
 
 function summarizeLegacyTag(tag: NbtCompound | undefined): string {
+  // tag タグが無い場合は空文字を返す
   if (!tag) {
     return ''
   }
   const displayField = getCompoundField(tag, 'display')
+  // display compound がある場合は Name を参照する
   if (displayField && displayField.type === 'compound') {
     const name = getString(displayField.value as NbtCompound, 'Name')
+    // 表示名があれば返す
     if (name) {
       return name
     }
@@ -46,14 +52,14 @@ function summarizeLegacyTag(tag: NbtCompound | undefined): string {
 
 function summarizeDisplay(compound: NbtCompound): string {
   const componentsField = getCompoundField(compound, 'components')
+  // 1.20.5+ の components 形式から表示用要約を作る
   if (componentsField && componentsField.type === 'compound') {
-    // 1.20.5+ の components 形式から表示用要約を作る
     return summarizeComponents(componentsField.value as NbtCompound)
   }
 
   const tagField = getCompoundField(compound, 'tag')
+  // legacy の tag.display 形式から表示用要約を作る
   if (tagField && tagField.type === 'compound') {
-    // legacy の tag.display 形式から表示用要約を作る
     return summarizeLegacyTag(tagField.value as NbtCompound)
   }
 
@@ -106,9 +112,11 @@ export function parseItemsList(items: NbtCompound[]): ItemStackView[] {
  */
 export function inferSlotCount(blockEntityId: string, items: ItemStackView[]): number {
   const known = CONTAINER_SLOTS[blockEntityId]
+  // 既知のコンテナ種別なら固定スロット数を返す
   if (known) {
     return known
   }
+  // アイテムが空なら既定 27 スロットとする
   if (items.length === 0) {
     return 27
   }

@@ -41,10 +41,12 @@ async function findMcaFiles(root: string): Promise<string[]> {
     // サブディレクトリと .mca ファイルを再帰的に収集する
     for (const entry of entries) {
       const fullPath = path.join(current, entry.name)
+      // サブディレクトリは再帰的に走査する
       if (entry.isDirectory()) {
         await walk(fullPath)
         continue
       }
+      // .mca ファイルを結果一覧へ追加する
       if (entry.isFile() && entry.name.endsWith('.mca')) {
         results.push(fullPath)
       }
@@ -58,12 +60,15 @@ async function findMcaFiles(root: string): Promise<string[]> {
 function inferDimension(worldPath: string, mcaPath: string): string {
   const relative = path.relative(worldPath, mcaPath)
   const parts = relative.split(path.sep)
+  // ネザーディメンションを判定する
   if (parts[0] === 'DIM-1') {
     return 'nether'
   }
+  // エンドディメンションを判定する
   if (parts[0] === 'DIM1') {
     return 'end'
   }
+  // カスタムディメンションを判定する
   if (parts[0] === 'dimensions' && parts.length >= 2) {
     return parts[1]
   }
@@ -72,6 +77,7 @@ function inferDimension(worldPath: string, mcaPath: string): string {
 
 function parseRegionCoords(fileName: string): { regionX: number; regionZ: number } | null {
   const match = fileName.match(/^r\.(-?\d+)\.(-?\d+)\.mca$/)
+  // ファイル名形式が一致しない場合は座標を復元できない
   if (!match) {
     return null
   }
@@ -84,14 +90,14 @@ function resolveChunkCoordinates(
   regionZ: number
 ): { chunkX: number; chunkZ: number } {
   let chunkX = getInt(chunk.nbt, 'xPos')
+  // xPos がないチャンクはリージョン座標とローカル座標から補完する
   if (chunkX === undefined) {
-    // xPos がないチャンクはリージョン座標とローカル座標から補完する
     chunkX = regionX * 32 + chunk.localX
   }
 
   let chunkZ = getInt(chunk.nbt, 'zPos')
+  // zPos がないチャンクはリージョン座標とローカル座標から補完する
   if (chunkZ === undefined) {
-    // zPos がないチャンクはリージョン座標とローカル座標から補完する
     chunkZ = regionZ * 32 + chunk.localZ
   }
 
@@ -137,6 +143,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
       const region = await readRegion(mcaPath)
       const dimension = inferDimension(worldPath, mcaPath)
       const coords = parseRegionCoords(path.basename(mcaPath))
+      // 破損チャンクの読み取りエラーを scan errors へ追加する
       for (const readError of region.readErrors) {
         // 破損チャンクの欠落を UI で認識できるように scan errors へ追加する
         errors.push(readError)
@@ -144,11 +151,13 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
 
       let regionX = 0
       let regionZ = 0
+      // リージョン座標が取得できた場合は補完に使う
       if (coords !== null) {
         regionX = coords.regionX
         regionZ = coords.regionZ
       }
 
+      // リージョン内の各チャンクから Items コンテナを収集する
       for (const chunk of region.chunks.values()) {
         const chunkCoords = resolveChunkCoordinates(chunk, regionX, regionZ)
 
@@ -160,7 +169,9 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
           chunkZ: chunkCoords.chunkZ
         })
 
+        // チャンク内の各コンテナに binding を登録する
         for (const container of chunkContainers) {
+          // コンテナ ID とチャンク座標の binding を登録する
           bindings.set(container.id, {
             regionFile: mcaPath,
             localX: chunk.localX,
@@ -189,6 +200,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
 
   // マージで新しく生成されたラージチェストの binding を登録する
   for (const container of mergedContainers) {
+    // 新規ラージチェストで binding 未登録の場合は primary 側を紐付ける
     if (container.largeChest && !bindings.has(container.id)) {
       bindings.set(container.id, {
         regionFile: container.largeChest.primary.regionFile,

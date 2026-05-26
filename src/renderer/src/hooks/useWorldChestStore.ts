@@ -59,6 +59,7 @@ export const useWorldChestStore = create<WorldChestState>((set) => ({
   updateContainer: (container) =>
     set((state) => ({
       containers: state.containers.map((entry) => {
+        // 更新対象 ID と一致するエントリだけ差し替える
         if (entry.id === container.id) {
           return container
         }

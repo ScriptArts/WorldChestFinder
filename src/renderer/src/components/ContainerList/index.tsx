@@ -16,6 +16,7 @@ interface ContainerListProps {
  * スキャン結果のコンテナ一覧（選択・フィルタ連動）。
  */
 export function ContainerList({ containers, selectedId, onSelect, disabled = false }: ContainerListProps): JSX.Element {
+  // コンテナが 0 件なら空状態メッセージを表示する
   if (containers.length === 0) {
     return (
       <div className="flex flex-1 items-center justify-center p-6 text-sm text-muted-foreground">

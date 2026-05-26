@@ -13,6 +13,7 @@ let transparentDragImage: HTMLImageElement | null = null
  * @param event - dragstart イベント
  */
 export function hideNativeDragImage(event: React.DragEvent): void {
+  // 透明画像を初回だけ生成して再利用する
   if (!transparentDragImage) {
     transparentDragImage = new Image()
     transparentDragImage.src = TRANSPARENT_DRAG_IMAGE

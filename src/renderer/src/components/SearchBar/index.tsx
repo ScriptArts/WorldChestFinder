@@ -22,6 +22,7 @@ interface SearchBarProps {
 }
 
 function dimensionSelectValue(dimension: string | undefined): string {
+  // 未指定なら「全ディメンション」を選択状態にする
   if (dimension === undefined) {
     return 'all'
   }
@@ -29,6 +30,7 @@ function dimensionSelectValue(dimension: string | undefined): string {
 }
 
 function sourceTypeSelectValue(sourceType: SourceType | undefined): string {
+  // 未指定なら「全タイプ」を選択状態にする
   if (sourceType === undefined) {
     return 'all'
   }
@@ -36,6 +38,7 @@ function sourceTypeSelectValue(sourceType: SourceType | undefined): string {
 }
 
 function minCountInputValue(minCount: number | undefined): string {
+  // 未指定なら入力欄を空にする
   if (minCount === undefined) {
     return ''
   }
@@ -43,6 +46,7 @@ function minCountInputValue(minCount: number | undefined): string {
 }
 
 function posInputValue(value: number | undefined): string {
+  // 未指定なら入力欄を空にする
   if (value === undefined) {
     return ''
   }
@@ -50,10 +54,12 @@ function posInputValue(value: number | undefined): string {
 }
 
 function parseOptionalCoordinate(raw: string): number | undefined {
+  // 空文字は座標未指定として扱う
   if (raw === '') {
     return undefined
   }
   const parsed = Number(raw)
+  // 数値に変換できなければ未指定とする
   if (!Number.isFinite(parsed)) {
     return undefined
   }
@@ -78,6 +84,7 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
 
   function handleSubmit(event: React.FormEvent): void {
     event.preventDefault()
+    // 操作中は検索を実行しない
     if (disabled) {
       return
     }
@@ -94,6 +101,7 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
             disabled={disabled}
             onValueChange={(value) => {
               let nextDimension: string | undefined = value
+              // 「全ディメンション」選択時はフィルタ条件を解除する
               if (value === 'all') {
                 nextDimension = undefined
               }
@@ -119,6 +127,7 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
             disabled={disabled}
             onValueChange={(value) => {
               let nextSourceType: SourceType | undefined = value as SourceType
+              // 「全タイプ」選択時はフィルタ条件を解除する
               if (value === 'all') {
                 nextSourceType = undefined
               }
@@ -199,8 +208,10 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
           disabled={disabled}
           onChange={(event) => {
             let nextMinCount: number | undefined
+            // 入力値があれば数値化し、空なら条件を解除する
             if (event.target.value) {
               nextMinCount = Number(event.target.value)
+            // 空入力なら最小個数条件を解除する
             } else {
               nextMinCount = undefined
             }

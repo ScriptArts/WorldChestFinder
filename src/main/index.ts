@@ -24,6 +24,7 @@ function createWindow(): void {
     logger.info('app', '開発サーバーからレンダラーを読み込み', {
       url: process.env.ELECTRON_RENDERER_URL
     })
+  // 本番ビルドではパッケージ済み HTML を読み込む
   } else {
     const htmlPath = join(__dirname, '../renderer/index.html')
     mainWindow.loadFile(htmlPath)
@@ -67,6 +68,7 @@ app.whenReady().then(async () => {
   })
 
   app.on('activate', () => {
+    // ウィンドウが全て閉じている場合は再作成する
     if (BrowserWindow.getAllWindows().length === 0) {
       logger.info('app', 'ウィンドウを再作成')
       createWindow()
@@ -75,6 +77,7 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  // macOS 以外では全ウィンドウ終了でアプリを終了する
   if (process.platform !== 'darwin') {
     logger.info('app', '全ウィンドウ終了のためアプリを終了')
     app.quit()

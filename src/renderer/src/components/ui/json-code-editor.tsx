@@ -58,8 +58,8 @@ const jsonEditorExtensions = [json(), oneDark, jsonEditorTheme, EditorView.lineW
  */
 export function JsonCodeEditor({ id, value, disabled = false, onChange }: JsonCodeEditorProps): JSX.Element {
   let isEditable = true
+  // 操作中は JSON 編集を受け付けない
   if (disabled) {
-    // 操作中は JSON 編集を受け付けない
     isEditable = false
   }
 

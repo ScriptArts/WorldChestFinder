@@ -31,8 +31,8 @@ function itemFromRaw(slot: number, itemId: string, count: number, raw: Record<st
 }
 
 function targetsMatch(current: EditorTarget | null, expected: EditorTarget): boolean {
+  // 適用開始時と同じ対象が表示中なら true を返す
   if (current !== null && current.containerId === expected.containerId && current.slot === expected.slot) {
-    // 適用開始時と同じ対象が表示中なら true を返す
     return true
   }
   return false
@@ -40,9 +40,11 @@ function targetsMatch(current: EditorTarget | null, expected: EditorTarget): boo
 
 function parseTargetSlot(raw: Record<string, unknown>, fallback: number, slotCount: number): number | null {
   let candidate = fallback
+  // NBT に Slot が数値で指定されていればそれを優先する
   if (typeof raw.Slot === 'number') {
     candidate = raw.Slot
   }
+  // スロット番号が範囲外なら無効
   if (!Number.isInteger(candidate) || candidate < 0 || candidate >= slotCount) {
     return null
   }
@@ -50,6 +52,7 @@ function parseTargetSlot(raw: Record<string, unknown>, fallback: number, slotCou
 }
 
 function parseItemId(raw: Record<string, unknown>): string | null {
+  // id が空文字列でなければ有効
   if (typeof raw.id !== 'string' || raw.id.trim() === '') {
     return null
   }
@@ -58,10 +61,11 @@ function parseItemId(raw: Record<string, unknown>): string | null {
 
 function parseItemCount(raw: Record<string, unknown>): number | null {
   let value = raw.count
+  // count がなければ legacy の Count を参照する
   if (value === undefined) {
-    // legacy NBT の Count も編集値として受け付ける
     value = raw.Count
   }
+  // 個数は 0 以上の整数である必要がある
   if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
     return null
   }
@@ -84,6 +88,7 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
   const activeTargetRef = useRef<EditorTarget | null>(null)
 
   useEffect(() => {
+    // コンテナまたはスロット未選択なら編集対象をクリアする
     if (!container || slot === null) {
       activeTargetRef.current = null
       return
@@ -92,6 +97,7 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     const existing = container.items.find((entry) => entry.slot === slot)
 
     let nextRaw: Record<string, unknown> = { Slot: slot, id: MinecraftIds.ITEM_AIR, count: 0 }
+    // 既存アイテムがあればその NBT をエディタへ読み込む
     if (existing !== undefined) {
       nextRaw = existing.raw
     }
@@ -99,6 +105,7 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     setNbtJson(JSON.stringify(nextRaw, null, 2))
   }, [container, slot])
 
+  // コンテナまたはスロット未選択時は案内を表示する
   if (!container || slot === null) {
     return (
       <Card>
@@ -110,8 +117,8 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
   }
 
   async function applyItem(nextItem: ItemStackView | null): Promise<void> {
+    // 操作中または適用中は重複 IPC を送らない
     if (disabled || applyingRef.current) {
-      // 操作中または適用中は重複 IPC を送らない
       return
     }
     const targetContainerId = container.id
@@ -120,15 +127,18 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     applyingRef.current = true
     setIsApplying(true)
     try {
+      // メインプロセスへスロット更新を依頼する
       const updated = await window.worldChest.updateSlot({
         containerId: targetContainerId,
         slot: targetSlotBeforeApply,
         item: nextItem
       })
+      // 更新成功時のみ UI を反映する
       if (updated) {
+        // 適用中に別コンテナへ切り替わっていない場合だけ画面へ反映する
         if (targetsMatch(activeTargetRef.current, expectedTarget)) {
-          // 適用中に別コンテナへ切り替わっていない場合だけ画面へ反映する
           let targetSlot: number | undefined
+          // クリア以外なら移動先スロットを親へ通知する
           if (nextItem !== null) {
             targetSlot = nextItem.slot
           }
@@ -147,16 +157,19 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     try {
       const raw = JSON.parse(nbtJson) as Record<string, unknown>
       const targetSlot = parseTargetSlot(raw, slot, container.slotCount)
+      // スロット番号が不正ならエラーを表示する
       if (targetSlot === null) {
         onError(`Slot は 0 〜 ${container.slotCount - 1} の整数で指定してください`)
         return
       }
       const itemId = parseItemId(raw)
+      // id が不正ならエラーを表示する
       if (itemId === null) {
         onError('id は空でない文字列で指定してください')
         return
       }
       const count = parseItemCount(raw)
+      // 個数が不正ならエラーを表示する
       if (count === null || count < 0 || count > 64) {
         onError('count または Count は 0 〜 64 の整数で指定してください')
         return

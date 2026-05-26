@@ -2,18 +2,22 @@ import { scanWorld, toScanResult } from '../src/main/world/WorldScanner'
 
 async function main(): Promise<void> {
   const worldPath = process.argv[2]
+  // ワールドパスが未指定なら使い方を表示して終了する
   if (!worldPath) {
     console.error('Usage: npx tsx scripts/scan-world.ts <worldPath>')
     process.exit(1)
   }
 
   const start = Date.now()
+  // ワールドをスキャンし進捗をログ出力する
   const session = await scanWorld(worldPath, (p) => {
+    // 主要フェーズまたは一定間隔で進捗を表示する
     if (p.phase === 'scan-finished' || p.phase === 'scan-discovery' || p.current % 25 === 0) {
       console.log(`[${p.current}/${p.total}] ${p.message}`)
     }
   })
 
+  // スキャン結果を集計用の形式へ変換する
   const result = toScanResult(session)
   const elapsed = ((Date.now() - start) / 1000).toFixed(1)
 
@@ -24,6 +28,7 @@ async function main(): Promise<void> {
 
   const byType: Record<string, number> = {}
   const byDim: Record<string, number> = {}
+  // ソース種別とディメンション別の件数を集計する
   for (const c of result.containers) {
     byType[c.sourceType] = (byType[c.sourceType] || 0) + 1
     byDim[c.dimension] = (byDim[c.dimension] || 0) + 1
@@ -32,6 +37,7 @@ async function main(): Promise<void> {
   console.log('By dimension:', byDim)
 
   const byBlock: Record<string, number> = {}
+  // Block Entity ID 別の件数を集計する
   for (const c of result.containers) {
     byBlock[c.blockEntityId] = (byBlock[c.blockEntityId] || 0) + 1
   }
@@ -41,16 +47,20 @@ async function main(): Promise<void> {
   const withItems = result.containers.filter((c) => c.items.length > 0)
   console.log(`Containers with items: ${withItems.length}`)
 
+  // アイテムを持つコンテナがあればサンプルを表示する
   if (withItems.length > 0) {
     console.log('\nSample containers:')
+    // 先頭数件のコンテナ内容を表示する
     for (const c of withItems.slice(0, 8)) {
       const itemSummary = c.items.map((i) => `${i.itemId}x${i.count}`).join(', ')
       console.log(`  ${c.blockEntityId} @ (${c.posX},${c.posY},${c.posZ}) [${c.dimension}/${c.sourceType}] -> ${itemSummary}`)
     }
   }
 
+  // エラーがあれば先頭数件を表示する
   if (result.errors.length > 0) {
     console.log('\nFirst errors:')
+    // 先頭 5 件のエラーメッセージを表示する
     for (const e of result.errors.slice(0, 5)) console.log(' ', e)
   }
 }
