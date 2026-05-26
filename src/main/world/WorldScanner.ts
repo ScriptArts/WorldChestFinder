@@ -5,6 +5,7 @@ import { formatError, invokeOptional } from '../../shared/valueUtils'
 import { logger } from '../logging/AppLogger'
 import { readRegion, type ChunkData, type LoadedRegion } from './AnvilRegionReader'
 import { findItemsHits, hitsToContainers } from './ItemsLocator'
+import { mergeLargeChests } from './LargeChestMerger'
 import { getInt } from './nbtUtils'
 
 /** スキャン進捗通知コールバック */
@@ -184,25 +185,39 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
     }
   }
 
+  const mergedContainers = mergeLargeChests(containers)
+
+  // マージで新しく生成されたラージチェストの binding を登録する
+  for (const container of mergedContainers) {
+    if (container.largeChest && !bindings.has(container.id)) {
+      bindings.set(container.id, {
+        regionFile: container.largeChest.primary.regionFile,
+        localX: -1,
+        localZ: -1
+      })
+    }
+  }
+
   invokeOptional(onProgress, {
     phase: 'scan-finished',
     current: mcaFiles.length,
     total: mcaFiles.length,
-    message: `Found ${containers.length} containers`
+    message: `Found ${mergedContainers.length} containers`
   })
 
   logger.info('scan', 'ワールド走査完了', {
     worldPath,
     durationMs: Date.now() - startedAt,
     regionFileCount: mcaFiles.length,
-    containerCount: containers.length,
+    containerCount: mergedContainers.length,
+    largeChestCount: mergedContainers.filter((c) => c.largeChest).length,
     errorCount: errors.length
   })
 
   return {
     worldPath,
     regions: new Map<string, LoadedRegion>(),
-    containers,
+    containers: mergedContainers,
     bindings,
     errors
   }

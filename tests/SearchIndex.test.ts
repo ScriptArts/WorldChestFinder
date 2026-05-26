@@ -63,14 +63,23 @@ const sample: ContainerRecord[] = [
 ]
 
 describe('filterContainers', () => {
-  it('filters by query and dimension', () => {
-    const byQuery = filterContainers(sample, { query: 'diamond' })
-    expect(byQuery).toHaveLength(1)
-    expect(byQuery[0].id).toBe('1')
-
+  it('filters by dimension', () => {
     const byDimension = filterContainers(sample, { dimension: 'nether' })
     expect(byDimension).toHaveLength(1)
     expect(byDimension[0].id).toBe('2')
+  })
+
+  it('filters by pos coordinates', () => {
+    const exact = filterContainers(sample, { posX: 1, posY: 64, posZ: 2 })
+    expect(exact).toHaveLength(1)
+    expect(exact[0].id).toBe('1')
+
+    const partialX = filterContainers(sample, { posX: 3 })
+    expect(partialX).toHaveLength(1)
+    expect(partialX[0].id).toBe('2')
+
+    const noMatch = filterContainers(sample, { posX: 1, posZ: 99 })
+    expect(noMatch).toHaveLength(0)
   })
 
   it('filters by nbt substring', () => {
@@ -79,16 +88,16 @@ describe('filterContainers', () => {
     expect(byNbt[0].id).toBe('1')
   })
 
-  it('filters by query and nbt on the same slot', () => {
-    const matched = filterContainers(sample, { query: 'iron_sword', nbt: 'sharpness' })
+  it('filters by nbt and minCount on the same slot', () => {
+    const matched = filterContainers(sample, { nbt: 'diamond', minCount: 10 })
     expect(matched).toHaveLength(1)
     expect(matched[0].id).toBe('1')
 
-    const unmatched = filterContainers(sample, { query: 'diamond', nbt: 'sharpness' })
+    const unmatched = filterContainers(sample, { nbt: 'sharpness', minCount: 10 })
     expect(unmatched).toHaveLength(0)
   })
 
-  it('filters by nbt only without query', () => {
+  it('filters by nbt only', () => {
     const byComponents = filterContainers(sample, { nbt: 'components' })
     expect(byComponents).toHaveLength(1)
     expect(byComponents[0].items.some((item) => item.slot === 1)).toBe(true)

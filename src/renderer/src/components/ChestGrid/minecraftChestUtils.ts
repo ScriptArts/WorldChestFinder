@@ -1,3 +1,5 @@
+import type { ContainerRecord } from '../../../../shared/types'
+
 const CONTAINER_TITLES: Record<string, string> = {
   'minecraft:chest': 'Chest',
   'minecraft:trapped_chest': 'Trapped Chest',
@@ -17,10 +19,19 @@ const CONTAINER_TITLES: Record<string, string> = {
 
 /**
  * Block Entity ID を UI 表示用タイトルに変換する。
+ * ラージチェストの場合は "Large Chest" と表示する。
  *
  * @param blockEntityId - コンテナ種別 ID
+ * @param container - コンテナ情報（ラージチェスト判定用、省略可）
  */
-export function formatContainerTitle(blockEntityId: string): string {
+export function formatContainerTitle(blockEntityId: string, container?: ContainerRecord): string {
+  if (container?.largeChest) {
+    if (blockEntityId === 'minecraft:trapped_chest') {
+      return 'Large Trapped Chest'
+    }
+    return 'Large Chest'
+  }
+
   if (CONTAINER_TITLES[blockEntityId]) {
     return CONTAINER_TITLES[blockEntityId]
   }

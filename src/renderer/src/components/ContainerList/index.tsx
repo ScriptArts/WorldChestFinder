@@ -1,5 +1,6 @@
 import type { ContainerRecord } from '../../../../shared/types'
 import { formatContainerPosition } from '../../../../shared/containerUtils'
+import { formatContainerTitle } from '../ChestGrid/minecraftChestUtils'
 import { Badge } from '../ui/badge'
 import { ScrollArea } from '../ui/scroll-area'
 import { cn } from '@renderer/lib/utils'
@@ -39,7 +40,7 @@ export function ContainerList({ containers, selectedId, onSelect, disabled = fal
               )}
               onClick={() => onSelect(container.id)}
             >
-              <strong className="text-sm">{container.blockEntityId}</strong>
+              <strong className="text-sm">{formatContainerTitle(container.blockEntityId, container)}</strong>
               <span className="text-xs text-muted-foreground">
                 {formatContainerPosition(container)}
               </span>

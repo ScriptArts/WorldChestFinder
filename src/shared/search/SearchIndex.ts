@@ -8,18 +8,54 @@ function normalizeTerm(term: string | undefined): string {
   return term.trim().toLowerCase()
 }
 
-/** アイテム単位のフィルタ条件が指定されているか */
-function hasItemLevelFilter(filter: SearchFilter): boolean {
-  if (normalizeTerm(filter.query).length > 0) {
-    // アイテム ID / 表示名の検索条件があればアイテム単位で絞り込む
+/** 座標フィルタが指定されているか */
+function hasPosFilter(filter: SearchFilter): boolean {
+  if (filter.posX !== undefined) {
     return true
   }
+  if (filter.posY !== undefined) {
+    return true
+  }
+  if (filter.posZ !== undefined) {
+    return true
+  }
+  return false
+}
+
+/**
+ * コンテナ座標が Pos 検索条件に一致するか判定する。
+ *
+ * @param container - 判定対象コンテナ
+ * @param filter - 検索条件
+ */
+function matchesPosition(container: ContainerRecord, filter: SearchFilter): boolean {
+  if (!hasPosFilter(filter)) {
+    return true
+  }
+  if (!container.positionKnown) {
+    // 座標不明のコンテナは Pos 指定時は除外する
+    return false
+  }
+  if (filter.posX !== undefined && container.posX !== filter.posX) {
+    return false
+  }
+  if (filter.posY !== undefined && container.posY !== filter.posY) {
+    return false
+  }
+  if (filter.posZ !== undefined && container.posZ !== filter.posZ) {
+    return false
+  }
+  return true
+}
+
+/** アイテム単位のフィルタ条件が指定されているか */
+function hasItemLevelFilter(filter: SearchFilter): boolean {
   if (normalizeTerm(filter.nbt).length > 0) {
     // NBT 検索条件があればアイテム単位で絞り込む
     return true
   }
   if (filter.minCount !== undefined) {
-    // 最小数量条件があればアイテム単位で絞り込む
+    // 最小アイテム数条件があればアイテム単位で絞り込む
     return true
   }
   return false
@@ -47,16 +83,7 @@ export function matchesNbt(item: ItemStackView, term: string): boolean {
  * @returns 一致すれば true
  */
 export function itemMatchesFilter(item: ItemStackView, filter: SearchFilter): boolean {
-  const query = normalizeTerm(filter.query)
   const nbt = normalizeTerm(filter.nbt)
-
-  if (query) {
-    const idMatch =
-      item.itemId.toLowerCase().includes(query) || item.displaySummary.toLowerCase().includes(query)
-    if (!idMatch) {
-      return false
-    }
-  }
 
   if (nbt && !matchesNbt(item, nbt)) {
     return false
@@ -83,23 +110,15 @@ export function containerMatchesFilter(container: ContainerRecord, filter: Searc
   if (filter.sourceType && container.sourceType !== filter.sourceType) {
     return false
   }
+  if (!matchesPosition(container, filter)) {
+    return false
+  }
 
   if (!hasItemLevelFilter(filter)) {
     return true
   }
 
-  if (container.items.some((item) => itemMatchesFilter(item, filter))) {
-    return true
-  }
-
-  const query = normalizeTerm(filter.query)
-  const nbt = normalizeTerm(filter.nbt)
-  // アイテム ID のみ指定時は Block Entity ID でもマッチさせる
-  if (query && !nbt) {
-    return container.blockEntityId.toLowerCase().includes(query)
-  }
-
-  return false
+  return container.items.some((item) => itemMatchesFilter(item, filter))
 }
 
 /**

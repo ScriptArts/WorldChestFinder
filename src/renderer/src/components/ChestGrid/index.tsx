@@ -124,7 +124,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
     <div className={rootClassName}>
       {dragPreviewPortal}
       <div className={getChestWindowClass(container.blockEntityId, container.slotCount)}>
-        <h2 className="mc-chest-title">{formatContainerTitle(container.blockEntityId)}</h2>
+        <h2 className="mc-chest-title">{formatContainerTitle(container.blockEntityId, container)}</h2>
         <p className="mc-chest-meta">
           {container.dimension} · {formatContainerPosition(container)} · {container.sourceType}
         </p>

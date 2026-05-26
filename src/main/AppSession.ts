@@ -1,14 +1,17 @@
-import type { ContainerRecord, ItemStackView, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
+import type { ContainerRecord, ItemStackView, LargeChestHalf, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
 import { invokeOptional } from '../shared/valueUtils'
 import { logger } from './logging/AppLogger'
 import { filterContainers } from './search/SearchIndex'
 import { saveModifiedRegions, type SaveProgressCallback } from './world/SaveCoordinator'
 import { readRegion, type LoadedRegion } from './world/AnvilRegionReader'
 import { findItemsHits, hitsToContainers } from './world/ItemsLocator'
+import { getHalfForSlot, toLocalSlot } from './world/LargeChestMerger'
 import { moveSlotInCompound, transferSlotItem } from './world/NbtEditor'
 import { getCompoundFieldFirst, getIntFirst } from './world/nbtUtils'
 import { toScanResult, type ScanSession, scanWorld, type ProgressCallback, type ContainerBinding } from './world/WorldScanner'
 import type { NbtCompound } from './world/nbtUtils'
+import { parseItemsList } from './world/ItemStackParser'
+import { getListItems } from './world/nbtUtils'
 
 /**
  * NBT compound からブロック座標を抽出する。
@@ -85,6 +88,50 @@ function positionMatches(container: ContainerRecord, compound: NbtCompound): boo
 
 function chunkKey(localX: number, localZ: number): string {
   return `${localX},${localZ}`
+}
+
+/**
+ * ラージチェストの片側に対応する owner compound をリージョン内から検出する。
+ */
+function resolveOwnerForHalf(
+  half: LargeChestHalf,
+  session: ScanSession
+): NbtCompound | null {
+  const region = session.regions.get(half.regionFile)
+  if (!region) return null
+
+  for (const chunk of region.chunks.values()) {
+    const hits = findItemsHits(chunk.nbt)
+    for (const hit of hits) {
+      const pos = extractPosition(hit.ownerCompound)
+      if (pos && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
+        return hit.ownerCompound
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * ラージチェストの片側に対応する binding を探す。
+ */
+function findBindingForHalf(
+  half: LargeChestHalf,
+  session: ScanSession
+): ContainerBinding | null {
+  const region = session.regions.get(half.regionFile)
+  if (!region) return null
+
+  for (const chunk of region.chunks.values()) {
+    const hits = findItemsHits(chunk.nbt)
+    for (const hit of hits) {
+      const pos = extractPosition(hit.ownerCompound)
+      if (pos && pos.x === half.posX && pos.y === half.posY && pos.z === half.posZ) {
+        return { regionFile: half.regionFile, localX: chunk.localX, localZ: chunk.localZ }
+      }
+    }
+  }
+  return null
 }
 
 /**
@@ -258,11 +305,27 @@ export class AppSession {
    * @returns 更新後のコンテナ。失敗時は null
    */
   async updateSlot(update: SlotUpdate): Promise<ContainerRecord | null> {
-    return this.runExclusive(async () =>
-      this.mutateContainer(update.containerId, (owner) =>
+    return this.runExclusive(async () => {
+      if (!this.session) return null
+      const containerIndex = this.session.containers.findIndex((e) => e.id === update.containerId)
+      if (containerIndex < 0) return null
+      const container = this.session.containers[containerIndex]
+
+      if (container.largeChest) {
+        return this.mutateLargeChest(containerIndex, update.slot, (owner) => {
+          const localSlot = toLocalSlot(update.slot)
+          let localItem: ItemStackView | null = null
+          if (update.item) {
+            localItem = { ...update.item, slot: localSlot, raw: { ...update.item.raw, Slot: localSlot } }
+          }
+          return transferSlotItem(owner, localSlot, localItem)
+        })
+      }
+
+      return this.mutateContainer(update.containerId, (owner) =>
         transferSlotItem(owner, update.slot, update.item)
       )
-    )
+    })
   }
 
   /**
@@ -272,11 +335,20 @@ export class AppSession {
    * @returns 更新後のコンテナ。失敗時は null
    */
   async moveSlot(move: SlotMove): Promise<ContainerRecord | null> {
-    return this.runExclusive(async () =>
-      this.mutateContainer(move.containerId, (owner) =>
+    return this.runExclusive(async () => {
+      if (!this.session) return null
+      const containerIndex = this.session.containers.findIndex((e) => e.id === move.containerId)
+      if (containerIndex < 0) return null
+      const container = this.session.containers[containerIndex]
+
+      if (container.largeChest) {
+        return this.mutateLargeChestMove(containerIndex, move.fromSlot, move.toSlot)
+      }
+
+      return this.mutateContainer(move.containerId, (owner) =>
         moveSlotInCompound(owner, move.fromSlot, move.toSlot)
       )
-    )
+    })
   }
 
   /**
@@ -325,6 +397,122 @@ export class AppSession {
 
     this.session.containers[containerIndex] = nextContainer
     return nextContainer
+  }
+
+  /**
+   * ラージチェストの片側を変更し、マージ済みコンテナを再構築する。
+   */
+  private async mutateLargeChest(
+    containerIndex: number,
+    targetSlot: number,
+    mutate: (owner: NbtCompound) => ItemStackView[]
+  ): Promise<ContainerRecord | null> {
+    if (!this.session) return null
+    const container = this.session.containers[containerIndex]
+    const pair = container.largeChest!
+    const side = getHalfForSlot(targetSlot)
+    const half = side === 'primary' ? pair.primary : pair.secondary
+
+    await this.ensureRegionLoaded(half.regionFile)
+    const owner = resolveOwnerForHalf(half, this.session)
+    if (!owner) return null
+
+    mutate(owner)
+
+    const binding = findBindingForHalf(half, this.session)
+    if (binding) this.markChunkDirty(binding)
+
+    return this.rebuildLargeChestContainer(containerIndex)
+  }
+
+  /**
+   * ラージチェストで両側にまたがる可能性のある move を処理する。
+   */
+  private async mutateLargeChestMove(
+    containerIndex: number,
+    fromSlot: number,
+    toSlot: number
+  ): Promise<ContainerRecord | null> {
+    if (!this.session) return null
+    if (fromSlot === toSlot) return this.session.containers[containerIndex]
+
+    const container = this.session.containers[containerIndex]
+    const pair = container.largeChest!
+    const fromSide = getHalfForSlot(fromSlot)
+    const toSide = getHalfForSlot(toSlot)
+
+    if (fromSide === toSide) {
+      return this.mutateLargeChest(containerIndex, fromSlot, (owner) =>
+        moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot))
+      )
+    }
+
+    const fromHalf = fromSide === 'primary' ? pair.primary : pair.secondary
+    const toHalf = toSide === 'primary' ? pair.primary : pair.secondary
+
+    await this.ensureRegionLoaded(fromHalf.regionFile)
+    await this.ensureRegionLoaded(toHalf.regionFile)
+
+    const fromOwner = resolveOwnerForHalf(fromHalf, this.session)
+    const toOwner = resolveOwnerForHalf(toHalf, this.session)
+    if (!fromOwner || !toOwner) return null
+
+    const localFrom = toLocalSlot(fromSlot)
+    const localTo = toLocalSlot(toSlot)
+
+    const fromItems = parseItemsList(getListItems(fromOwner, 'Items'))
+    const toItems = parseItemsList(getListItems(toOwner, 'Items'))
+    const fromItem = fromItems.find((i) => i.slot === localFrom) || null
+    const toItem = toItems.find((i) => i.slot === localTo) || null
+
+    if (fromItem) {
+      transferSlotItem(fromOwner, localFrom, null)
+      const movedItem = { ...fromItem, slot: localTo, raw: { ...fromItem.raw, Slot: localTo } }
+      transferSlotItem(toOwner, localTo, movedItem)
+    }
+    if (toItem) {
+      transferSlotItem(toOwner, localTo, null)
+      const movedBack = { ...toItem, slot: localFrom, raw: { ...toItem.raw, Slot: localFrom } }
+      transferSlotItem(fromOwner, localFrom, movedBack)
+    }
+
+    const fromBinding = findBindingForHalf(fromHalf, this.session)
+    const toBinding = findBindingForHalf(toHalf, this.session)
+    if (fromBinding) this.markChunkDirty(fromBinding)
+    if (toBinding) this.markChunkDirty(toBinding)
+
+    return this.rebuildLargeChestContainer(containerIndex)
+  }
+
+  /**
+   * 両側の NBT を再読み込みしてマージ済みコンテナを再構築する。
+   */
+  private rebuildLargeChestContainer(containerIndex: number): ContainerRecord | null {
+    if (!this.session) return null
+    const container = this.session.containers[containerIndex]
+    const pair = container.largeChest!
+
+    const primaryOwner = resolveOwnerForHalf(pair.primary, this.session)
+    const secondaryOwner = resolveOwnerForHalf(pair.secondary, this.session)
+
+    const primaryItems = primaryOwner ? parseItemsList(getListItems(primaryOwner, 'Items')) : []
+    const secondaryItems = secondaryOwner ? parseItemsList(getListItems(secondaryOwner, 'Items')) : []
+
+    const mergedItems: ItemStackView[] = [
+      ...primaryItems,
+      ...secondaryItems.map((item) => ({
+        ...item,
+        slot: item.slot + 27,
+        raw: { ...item.raw, Slot: item.slot + 27 }
+      }))
+    ].sort((a, b) => a.slot - b.slot)
+
+    const updated: ContainerRecord = {
+      ...container,
+      items: mergedItems
+    }
+    this.session.containers[containerIndex] = updated
+    return updated
   }
 
   /**

@@ -15,6 +15,34 @@ export interface ItemStackView {
   raw: Record<string, unknown>
 }
 
+/** ラージチェストを構成する片側の情報 */
+export interface LargeChestHalf {
+  /** 元コンテナの ID */
+  containerId: string
+  /** リージョンファイルの絶対パス */
+  regionFile: string
+  /** チャンク X 座標 */
+  chunkX: number
+  /** チャンク Z 座標 */
+  chunkZ: number
+  /** ブロック座標 */
+  posX: number
+  posY: number
+  posZ: number
+  /** Items タグへの NBT パス */
+  nbtPath: string
+  /** マージ後のスロットオフセット（0 or 27） */
+  slotOffset: number
+}
+
+/** ラージチェストのペア情報 */
+export interface LargeChestPairInfo {
+  /** 上段（スロット 0-26） */
+  primary: LargeChestHalf
+  /** 下段（スロット 27-53） */
+  secondary: LargeChestHalf
+}
+
 /** チェスト等のコンテナ 1 件分のメタデータと中身 */
 export interface ContainerRecord {
   /** セッション内で一意な ID */
@@ -44,6 +72,8 @@ export interface ContainerRecord {
   slotCount: number
   /** 格納アイテム一覧 */
   items: ItemStackView[]
+  /** ラージチェストの場合のペア情報 */
+  largeChest?: LargeChestPairInfo
 }
 
 /** スキャン進捗 */
@@ -86,12 +116,17 @@ export interface ScanResult {
 
 /** コンテナ一覧の検索条件 */
 export interface SearchFilter {
-  /** アイテム ID 部分一致 */
-  query?: string
   /** NBT JSON 部分一致 */
   nbt?: string
   dimension?: string
   sourceType?: SourceType
+  /** ブロック座標 X（指定時は一致必須） */
+  posX?: number
+  /** ブロック座標 Y（指定時は一致必須） */
+  posY?: number
+  /** ブロック座標 Z（指定時は一致必須） */
+  posZ?: number
+  /** 最小アイテム数（この個数以上のスタックを含むコンテナ） */
   minCount?: number
 }
 

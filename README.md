@@ -15,7 +15,7 @@ Minecraft Java Edition ワールド（Anvil 形式）から `Items` タグを持
 - ワールド全体走査: `region/`, `entities/`, `poi/` 配下の `.mca` を再帰探索
 - `Items` タグの再帰検出
 - Minecraft 風 9 列チェストグリッド UI
-- アイテム ID / ディメンション / ソース種別 / 最小数量での検索
+- NBT / Pos（X・Y・Z） / ディメンション / コンテナタイプ / 最小アイテム数での検索
 - スロット単位の編集と安全保存（`.bak` バックアップ + 一時ファイル経由の置換）
 
 ## Setup

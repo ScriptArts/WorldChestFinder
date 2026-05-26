@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, Save, Search } from 'lucide-react'
+import type { SearchFilter } from '../../shared/types'
 import { coalesce, formatError } from '../../shared/valueUtils'
 import { ChestGrid } from './components/ChestGrid'
 import { ContainerList } from './components/ContainerList'
@@ -62,7 +63,6 @@ export default function App(): JSX.Element {
     selectedContainerId,
     selectedSlot,
     filter,
-    statusMessage,
     setWorldPath,
     setAssetsStatus,
     setAssetProgress,
@@ -109,10 +109,6 @@ export default function App(): JSX.Element {
       unsubscribeAssets()
     }
   }, [isScanning, setAssetProgress, setAssetsStatus, setProgress, setSaveProgress, setStatusMessage])
-
-  useEffect(() => {
-    window.worldChest.getContainers(filter).then(setContainers)
-  }, [filter, setContainers])
 
   const selectedContainer = useMemo(() => {
     const found = containers.find((entry) => entry.id === selectedContainerId)
@@ -190,6 +186,12 @@ export default function App(): JSX.Element {
       clearWorldPreview(path)
       setStatusMessage(`Selected: ${path}`)
     }
+  }
+
+  async function handleSearch(nextFilter: SearchFilter): Promise<void> {
+    setFilter(nextFilter)
+    const nextContainers = await window.worldChest.getContainers(nextFilter)
+    setContainers(nextContainers)
   }
 
   async function handleScan(): Promise<void> {
@@ -360,7 +362,7 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <div className="grid h-screen min-h-0 grid-rows-[auto_auto_1fr_auto] overflow-hidden bg-background">
+    <div className="grid h-screen min-h-0 grid-rows-[auto_auto_1fr] overflow-hidden bg-background">
       <header className="flex flex-wrap items-center gap-2 border-b bg-card px-4 py-3">
         <Button type="button" variant="secondary" onClick={handleSelectWorld} disabled={isBusy}>
           <FolderOpen />
@@ -423,7 +425,7 @@ export default function App(): JSX.Element {
           />
         )}
         <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card p-3">
-          <SearchBar filter={filter} onChange={setFilter} disabled={isBusy} />
+          <SearchBar appliedFilter={filter} onSearch={handleSearch} disabled={isBusy} />
           <Separator className="my-3" />
           <ContainerList
             containers={containers}
@@ -452,8 +454,6 @@ export default function App(): JSX.Element {
           />
         </section>
       </main>
-
-      <footer className="border-t bg-card px-4 py-2 text-sm text-muted-foreground">{statusMessage}</footer>
     </div>
   )
 }
