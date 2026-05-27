@@ -224,7 +224,7 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
       </div>
 
       <div className="grid gap-2">
-        <Label htmlFor="search-nbt">NBT</Label>
+        <Label htmlFor="search-nbt">NBT（部分一致）</Label>
         <Input
           id="search-nbt"
           type="search"
