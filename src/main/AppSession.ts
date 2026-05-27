@@ -1,4 +1,5 @@
 import type { ContainerRecord, ItemStackView, LargeChestHalf, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
+import { replaceSlotInSnbt } from '../shared/nbt/SnbtCodec'
 import { invokeOptional } from '../shared/valueUtils'
 import { logger } from './logging/AppLogger'
 import { filterContainers } from './search/SearchIndex'
@@ -346,7 +347,7 @@ export class AppSession {
           let localItem: ItemStackView | null = null
           // 更新アイテムがある場合はローカルスロット番号を付与する
           if (update.item) {
-            localItem = { ...update.item, slot: localSlot, raw: { ...update.item.raw, Slot: localSlot } }
+            localItem = { ...update.item, slot: localSlot, raw: replaceSlotInSnbt(update.item.raw, localSlot) }
           }
           return transferSlotItem(owner, localSlot, localItem)
         })
@@ -548,13 +549,13 @@ export class AppSession {
     // 移動元にアイテムがある場合は移動先 owner へ移す
     if (fromItem) {
       transferSlotItem(fromOwner, localFrom, null)
-      const movedItem = { ...fromItem, slot: localTo, raw: { ...fromItem.raw, Slot: localTo } }
+      const movedItem = { ...fromItem, slot: localTo, raw: replaceSlotInSnbt(fromItem.raw, localTo) }
       transferSlotItem(toOwner, localTo, movedItem)
     }
     // 移動先にアイテムがある場合は元スロットへ戻して入れ替える
     if (toItem) {
       transferSlotItem(toOwner, localTo, null)
-      const movedBack = { ...toItem, slot: localFrom, raw: { ...toItem.raw, Slot: localFrom } }
+      const movedBack = { ...toItem, slot: localFrom, raw: replaceSlotInSnbt(toItem.raw, localFrom) }
       transferSlotItem(fromOwner, localFrom, movedBack)
     }
 
@@ -609,7 +610,7 @@ export class AppSession {
       ...secondaryItems.map((item) => ({
         ...item,
         slot: item.slot + 27,
-        raw: { ...item.raw, Slot: item.slot + 27 }
+        raw: replaceSlotInSnbt(item.raw, item.slot + 27)
       }))
     ].sort((a, b) => a.slot - b.slot)
 

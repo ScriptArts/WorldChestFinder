@@ -70,7 +70,7 @@ function hasItemLevelFilter(filter: SearchFilter): boolean {
 }
 
 /**
- * アイテム NBT が検索語に一致するか判定する。
+ * アイテム SNBT が検索語に一致するか判定する。
  *
  * @param item - 判定対象アイテム
  * @param term - 正規化済み検索語（空なら常に true）
@@ -81,8 +81,8 @@ export function matchesNbt(item: ItemStackView, term: string): boolean {
   if (!term) {
     return true
   }
-  // アイテム NBT を JSON 文字列化して部分一致を判定する
-  return JSON.stringify(item.raw).toLowerCase().includes(term)
+  // アイテム SNBT 文字列に部分一致を判定する
+  return item.raw.toLowerCase().includes(term)
 }
 
 /**

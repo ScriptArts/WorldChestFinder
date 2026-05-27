@@ -7,6 +7,8 @@ interface JsonCodeEditorProps {
   id: string
   value: string
   disabled?: boolean
+  /** true のとき親要素の残り高さいっぱいに伸ばす */
+  fillHeight?: boolean
   onChange: (value: string) => void
 }
 
@@ -47,6 +49,26 @@ const jsonEditorTheme = EditorView.theme({
 
 const jsonEditorExtensions = [json(), oneDark, jsonEditorTheme, EditorView.lineWrapping]
 
+const fillHeightEditorTheme = EditorView.theme({
+  '&': {
+    height: '100%'
+  },
+  '.cm-editor': {
+    height: '100%'
+  },
+  '.cm-scroller': {
+    overflow: 'auto'
+  }
+})
+
+function buildJsonEditorExtensions(fillHeight: boolean): typeof jsonEditorExtensions {
+  // 可変高さのときは CodeMirror 本体を親高さに合わせる
+  if (fillHeight) {
+    return [...jsonEditorExtensions, fillHeightEditorTheme]
+  }
+  return jsonEditorExtensions
+}
+
 /**
  * JSON 編集専用のコードエディタ。
  *
@@ -56,20 +78,34 @@ const jsonEditorExtensions = [json(), oneDark, jsonEditorTheme, EditorView.lineW
  * @param onChange - 編集内容変更時の通知
  * @returns JSON 構文ハイライト付きエディタ
  */
-export function JsonCodeEditor({ id, value, disabled = false, onChange }: JsonCodeEditorProps): JSX.Element {
+export function JsonCodeEditor({
+  id,
+  value,
+  disabled = false,
+  fillHeight = false,
+  onChange
+}: JsonCodeEditorProps): JSX.Element {
   let isEditable = true
   // 操作中は JSON 編集を受け付けない
   if (disabled) {
     isEditable = false
   }
 
+  let wrapperClassName = 'overflow-hidden rounded-md border border-input bg-transparent'
+  let editorHeight = '220px'
+  // 親の残り高さに合わせてエディタを伸ばす
+  if (fillHeight) {
+    wrapperClassName = `${wrapperClassName} flex min-h-0 flex-1 flex-col`
+    editorHeight = '100%'
+  }
+
   return (
-    <div className="overflow-hidden rounded-md border border-input bg-transparent">
+    <div className={wrapperClassName}>
       <CodeMirror
         id={id}
         value={value}
-        height="220px"
-        extensions={jsonEditorExtensions}
+        height={editorHeight}
+        extensions={buildJsonEditorExtensions(fillHeight)}
         editable={isEditable}
         basicSetup={{
           lineNumbers: true,

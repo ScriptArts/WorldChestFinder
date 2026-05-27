@@ -11,8 +11,8 @@ export interface ItemStackView {
   count: number
   /** 表示名や components 由来の要約 */
   displaySummary: string
-  /** 元 NBT を plain object 化したもの */
-  raw: Record<string, unknown>
+  /** 元 NBT の SNBT 表現 */
+  raw: string
 }
 
 /** ラージチェストを構成する片側の情報 */
@@ -116,7 +116,7 @@ export interface ScanResult {
 
 /** コンテナ一覧の検索条件 */
 export interface SearchFilter {
-  /** NBT JSON 部分一致 */
+  /** NBT SNBT 部分一致 */
   nbt?: string
   dimension?: string
   sourceType?: SourceType

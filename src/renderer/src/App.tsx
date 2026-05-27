@@ -3,6 +3,7 @@ import { FolderOpen, Save, Search } from 'lucide-react'
 import type { SearchFilter } from '../../shared/types'
 import { coalesce, formatError } from '../../shared/valueUtils'
 import { ChestGrid } from './components/ChestGrid'
+import { ConfirmDialog } from './components/ConfirmDialog'
 import { ContainerList } from './components/ContainerList'
 import { OperationProgressBar } from './components/OperationProgressBar'
 import { SearchBar } from './components/SearchBar'
@@ -54,6 +55,7 @@ export default function App(): JSX.Element {
   const [isSaving, setIsSaving] = useState(false)
   const [isMovingSlot, setIsMovingSlot] = useState(false)
   const [saveNotice, setSaveNotice] = useState<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null)
+  const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
 
   const {
     worldPath,
@@ -271,6 +273,30 @@ export default function App(): JSX.Element {
       return
     }
 
+    // 保存前にバックアップ推奨の確認ダイアログを表示する
+    setSaveConfirmOpen(true)
+  }
+
+  function handleCancelSaveConfirm(): void {
+    setSaveConfirmOpen(false)
+  }
+
+  async function handleConfirmSave(): Promise<void> {
+    setSaveConfirmOpen(false)
+
+    const status = await window.worldChest.getSaveStatus()
+    setSaveStatus(status)
+
+    // 確認中に保存対象がなくなった場合は保存を中止する
+    if (!status.worldLoaded || status.pendingRegionCount === 0) {
+      showSaveNotice('info', '保存する変更がありません。スロットを編集してから保存してください')
+      return
+    }
+    // 確認中に別操作で保存が始まっていた場合は中止する
+    if (isSaving) {
+      return
+    }
+
     setIsSaving(true)
     setSaveProgress({
       phase: 'save-start',
@@ -447,6 +473,18 @@ export default function App(): JSX.Element {
         <OperationProgressBar title="ワールド保存中" progress={saveProgress} />
       )}
 
+      <ConfirmDialog
+        open={saveConfirmOpen}
+        title="ワールドを保存しますか？"
+        description={'保存処理によってワールドデータが破損する可能性があります。\n保存前にワールドフォルダのバックアップを取ることを強く推奨します。'}
+        confirmLabel="保存する"
+        cancelLabel="キャンセル"
+        onConfirm={() => {
+          void handleConfirmSave()
+        }}
+        onCancel={handleCancelSaveConfirm}
+      />
+
       <main className="relative grid min-h-0 gap-3 overflow-hidden p-3 lg:grid-cols-[420px_1fr]">
         {isBusy && (
           <div
@@ -454,7 +492,7 @@ export default function App(): JSX.Element {
             aria-hidden
           />
         )}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border bg-card p-3">
+        <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card p-3">
           <SearchBar appliedFilter={filter} onSearch={handleSearch} disabled={isBusy} />
           <Separator className="my-3" />
           <ContainerList
@@ -465,8 +503,8 @@ export default function App(): JSX.Element {
           />
         </section>
 
-        <section className="flex w-full min-h-0 flex-col gap-6 overflow-y-auto p-6">
-          <div className="flex justify-center">
+        <section className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden">
+          <div className="flex shrink-0 justify-center">
             <ChestGrid
               container={selectedContainer}
               selectedSlot={selectedSlot}
@@ -475,13 +513,15 @@ export default function App(): JSX.Element {
               onMoveSlot={moveSelectedSlot}
             />
           </div>
-          <SlotEditor
-            container={selectedContainer}
-            slot={selectedSlot}
-            disabled={isBusy}
-            onUpdated={handleSlotUpdated}
-            onError={setStatusMessage}
-          />
+          <div className="flex min-h-0 flex-1 flex-col">
+            <SlotEditor
+              container={selectedContainer}
+              slot={selectedSlot}
+              disabled={isBusy}
+              onUpdated={handleSlotUpdated}
+              onError={setStatusMessage}
+            />
+          </div>
         </section>
       </main>
     </div>

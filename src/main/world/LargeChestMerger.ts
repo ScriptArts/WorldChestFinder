@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { MinecraftIds } from '../../shared/minecraftIds'
+import { replaceSlotInSnbt } from '../../shared/nbt/SnbtCodec'
 import type { ContainerRecord, ItemStackView, LargeChestHalf, LargeChestPairInfo } from '../../shared/types'
 
 const CHEST_IDS = new Set([MinecraftIds.BLOCK_CHEST, MinecraftIds.BLOCK_TRAPPED_CHEST])
@@ -85,7 +86,7 @@ function mergeItems(primary: ContainerRecord, secondary: ContainerRecord): ItemS
     merged.push({
       ...item,
       slot: item.slot + 27,
-      raw: { ...item.raw, Slot: item.slot + 27 }
+      raw: replaceSlotInSnbt(item.raw, item.slot + 27)
     })
   }
   return merged.sort((a, b) => a.slot - b.slot)

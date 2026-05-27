@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { MinecraftIds } from '../../../../shared/minecraftIds'
+import { getInt, getString } from '../../../../shared/nbt/nbtAccess'
+import { buildItemSnbt, SnbtParseError, snbtToCompound } from '../../../../shared/nbt/SnbtCodec'
+import type { NbtCompound } from '../../../../shared/nbt/nbtTypes'
 import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -19,14 +22,13 @@ interface EditorTarget {
   slot: number
 }
 
-function itemFromRaw(slot: number, itemId: string, count: number, raw: Record<string, unknown>): ItemStackView {
-  const nextRaw: Record<string, unknown> = { ...raw, Slot: slot, id: itemId }
+function itemFromSnbt(slot: number, itemId: string, count: number, rawSnbt: string): ItemStackView {
   return {
     slot,
     itemId,
     count,
     displaySummary: '',
-    raw: nextRaw
+    raw: rawSnbt
   }
 }
 
@@ -38,11 +40,12 @@ function targetsMatch(current: EditorTarget | null, expected: EditorTarget): boo
   return false
 }
 
-function parseTargetSlot(raw: Record<string, unknown>, fallback: number, slotCount: number): number | null {
+function parseTargetSlot(compound: NbtCompound, fallback: number, slotCount: number): number | null {
   let candidate = fallback
+  const slotValue = getInt(compound, 'Slot')
   // NBT に Slot が数値で指定されていればそれを優先する
-  if (typeof raw.Slot === 'number') {
-    candidate = raw.Slot
+  if (slotValue !== undefined) {
+    candidate = slotValue
   }
   // スロット番号が範囲外なら無効
   if (!Number.isInteger(candidate) || candidate < 0 || candidate >= slotCount) {
@@ -51,29 +54,30 @@ function parseTargetSlot(raw: Record<string, unknown>, fallback: number, slotCou
   return candidate
 }
 
-function parseItemId(raw: Record<string, unknown>): string | null {
+function parseItemId(compound: NbtCompound): string | null {
+  const itemId = getString(compound, 'id')
   // id が空文字列でなければ有効
-  if (typeof raw.id !== 'string' || raw.id.trim() === '') {
+  if (itemId === undefined || itemId.trim() === '') {
     return null
   }
-  return raw.id
+  return itemId
 }
 
-function parseItemCount(raw: Record<string, unknown>): number | null {
-  let value = raw.count
+function parseItemCount(compound: NbtCompound): number | null {
+  let value = getInt(compound, 'count')
   // count がなければ legacy の Count を参照する
   if (value === undefined) {
-    value = raw.Count
+    value = getInt(compound, 'Count')
   }
   // 個数は 0 以上の整数である必要がある
-  if (typeof value !== 'number' || Number.isNaN(value) || !Number.isInteger(value)) {
+  if (value === undefined || Number.isNaN(value) || !Number.isInteger(value)) {
     return null
   }
   return value
 }
 
 /**
- * 選択スロットの NBT JSON を編集するパネル。
+ * 選択スロットの NBT SNBT を編集するパネル。
  *
  * @param container - 編集対象コンテナ
  * @param slot - 編集対象スロット番号
@@ -82,7 +86,7 @@ function parseItemCount(raw: Record<string, unknown>): number | null {
  * @param disabled - 操作中は true
  */
 export function SlotEditor({ container, slot, onUpdated, onError, disabled = false }: SlotEditorProps): JSX.Element {
-  const [nbtJson, setNbtJson] = useState('{}')
+  const [nbtSnbt, setNbtSnbt] = useState('{}')
   const [isApplying, setIsApplying] = useState(false)
   const applyingRef = useRef(false)
   const activeTargetRef = useRef<EditorTarget | null>(null)
@@ -96,13 +100,13 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     activeTargetRef.current = { containerId: container.id, slot }
     const existing = container.items.find((entry) => entry.slot === slot)
 
-    let nextRaw: Record<string, unknown> = { Slot: slot, id: MinecraftIds.ITEM_AIR, count: 0 }
-    // 既存アイテムがあればその NBT をエディタへ読み込む
+    let nextSnbt = buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0)
+    // 既存アイテムがあればその SNBT をエディタへ読み込む
     if (existing !== undefined) {
-      nextRaw = existing.raw
+      nextSnbt = existing.raw
     }
 
-    setNbtJson(JSON.stringify(nextRaw, null, 2))
+    setNbtSnbt(nextSnbt)
   }, [container, slot])
 
   // コンテナまたはスロット未選択時は案内を表示する
@@ -155,55 +159,61 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
 
   async function apply(): Promise<void> {
     try {
-      const raw = JSON.parse(nbtJson) as Record<string, unknown>
-      const targetSlot = parseTargetSlot(raw, slot, container.slotCount)
+      const compound = snbtToCompound(nbtSnbt.trim())
+      const targetSlot = parseTargetSlot(compound, slot, container.slotCount)
       // スロット番号が不正ならエラーを表示する
       if (targetSlot === null) {
         onError(`Slot は 0 〜 ${container.slotCount - 1} の整数で指定してください`)
         return
       }
-      const itemId = parseItemId(raw)
+      const itemId = parseItemId(compound)
       // id が不正ならエラーを表示する
       if (itemId === null) {
         onError('id は空でない文字列で指定してください')
         return
       }
-      const count = parseItemCount(raw)
+      const count = parseItemCount(compound)
       // 個数が不正ならエラーを表示する
       if (count === null || count < 0 || count > 64) {
         onError('count または Count は 0 〜 64 の整数で指定してください')
         return
       }
-      await applyItem(itemFromRaw(targetSlot, itemId, count, raw))
-    } catch {
-      onError('NBT JSON の形式が正しくありません')
+      await applyItem(itemFromSnbt(targetSlot, itemId, count, nbtSnbt.trim()))
+    } catch (error) {
+      // SNBT パース失敗時は専用メッセージを表示する
+      if (error instanceof SnbtParseError) {
+        onError(`NBT SNBT の形式が正しくありません: ${error.message}`)
+        return
+      }
+      onError('NBT SNBT の形式が正しくありません')
     }
   }
 
   const editorDisabled = disabled || isApplying
 
   return (
-    <Card className="w-full">
-      <CardHeader>
+    <Card className="flex h-full min-h-0 w-full flex-col">
+      <CardHeader className="shrink-0">
         <CardTitle>Slot {slot}</CardTitle>
         <CardDescription>
           変更後は「適用」を押してから、ヘッダーの「保存」でワールドに書き込みます
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-4">
-        <div className="grid gap-2">
-          <Label htmlFor="slot-nbt-json">NBT (JSON)</Label>
+      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
+        <div className="flex min-h-0 flex-1 flex-col gap-2">
+          <Label htmlFor="slot-nbt-snbt">NBT (SNBT)</Label>
           <JsonCodeEditor
-            id="slot-nbt-json"
-            value={nbtJson}
+            id="slot-nbt-snbt"
+            value={nbtSnbt}
             disabled={editorDisabled}
+            fillHeight
             onChange={(value) => {
-              // JSON エディタの内容をそのまま編集状態へ反映する
-              setNbtJson(value)
+              // SNBT エディタの内容をそのまま編集状態へ反映する
+              setNbtSnbt(value)
             }}
           />
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <Button type="button" onClick={apply} disabled={editorDisabled}>適用</Button>
           <Button type="button" variant="outline" onClick={() => applyItem(null)} disabled={editorDisabled}>クリア</Button>
         </div>

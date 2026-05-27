@@ -1,8 +1,9 @@
 import { MinecraftIds } from '../../shared/minecraftIds'
+import { buildItemSnbt, compoundToSnbt } from '../../shared/nbt/SnbtCodec'
 import type { ItemStackView } from '../../shared/types'
 import { coalesce, firstDefined } from '../../shared/valueUtils'
 import type { NbtCompound } from './nbtUtils'
-import { compoundToPlain, getCompoundField, getInt, getString } from './nbtUtils'
+import { getCompoundField, getInt, getString } from './nbtUtils'
 
 const CONTAINER_SLOTS: Record<string, number> = {
   [MinecraftIds.BLOCK_CHEST]: 27,
@@ -85,7 +86,7 @@ export function parseItemStack(compound: NbtCompound, fallbackSlot: number): Ite
     itemId,
     count,
     displaySummary: summarizeDisplay(compound),
-    raw: compoundToPlain(compound)
+    raw: compoundToSnbt(compound, { pretty: true })
   }
 }
 
@@ -125,24 +126,10 @@ export function inferSlotCount(blockEntityId: string, items: ItemStackView[]): n
 }
 
 /**
- * 空スロット用の plain NBT オブジェクトを生成する。
+ * 空スロット用の SNBT 文字列を生成する。
  *
  * @param slot - スロット番号
  */
-export function buildEmptySlot(slot: number): Record<string, unknown> {
-  return { Slot: slot, id: MinecraftIds.ITEM_AIR, count: 0 }
-}
-
-/**
- * ItemStackView から編集用 plain NBT を構築する。
- *
- * @param item - ソースアイテム
- */
-export function buildItemNbt(item: ItemStackView): Record<string, unknown> {
-  const base = { ...item.raw }
-  base.Slot = item.slot
-  base.id = item.itemId
-  base.count = item.count
-  delete base.Count
-  return base
+export function buildEmptySlot(slot: number): string {
+  return buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0)
 }

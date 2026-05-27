@@ -1,12 +1,6 @@
-/** prismarine-nbt 形式の NBT タグ */
-export type NbtTag = {
-  type: string
-  value: unknown
-  name?: string
-}
+import type { NbtCompound, NbtTag } from '../../shared/nbt/nbtTypes'
 
-/** キー名 → NBT タグ の compound マップ */
-export type NbtCompound = Record<string, NbtTag>
+export type { NbtCompound, NbtTag } from '../../shared/nbt/nbtTypes'
 
 /**
  * 値が compound 型 NBT タグか判定する。
@@ -147,45 +141,6 @@ export function getListItems(compound: NbtCompound, key: string): NbtCompound[] 
     }
   }
   return items
-}
-
-/**
- * NBT compound を JSON 互換の plain object に変換する。
- *
- * @param compound - 変換元
- */
-export function compoundToPlain(compound: NbtCompound): Record<string, unknown> {
-  const result: Record<string, unknown> = {}
-  // 各フィールドを plain 値へ再帰変換する
-  for (const [key, tag] of Object.entries(compound)) {
-    result[key] = tagToPlain(tag)
-  }
-  return result
-}
-
-/** NBT タグを再帰的に plain 値へ変換する */
-function tagToPlain(tag: NbtTag): unknown {
-  // compound タグは再帰的に plain object へ変換する
-  if (tag.type === 'compound' && typeof tag.value === 'object' && tag.value !== null) {
-    return compoundToPlain(tag.value as NbtCompound)
-  }
-  // list タグは各要素を plain 値へ変換する
-  if (tag.type === 'list' && typeof tag.value === 'object' && tag.value !== null) {
-    const list = tag.value as { type: string; value: unknown[] }
-    return list.value.map((entry) => {
-      const compoundEntry = asCompound(entry)
-      // compound エントリは再帰変換する
-      if (compoundEntry) {
-        return compoundToPlain(compoundEntry)
-      }
-      // NBT タグエントリは tagToPlain で変換する
-      if (typeof entry === 'object' && entry !== null && (entry as NbtTag).type) {
-        return tagToPlain(entry as NbtTag)
-      }
-      return entry
-    })
-  }
-  return tag.value
 }
 
 /**
