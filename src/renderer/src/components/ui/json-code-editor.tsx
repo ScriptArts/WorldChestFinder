@@ -1,7 +1,7 @@
 import CodeMirror from '@uiw/react-codemirror'
-import { json } from '@codemirror/lang-json'
-import { oneDark } from '@codemirror/theme-one-dark'
+import { oneDarkTheme } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
+import { snbtHighlightPlugin, snbtHighlightTheme } from '@renderer/lib/snbt/snbtHighlightPlugin'
 
 interface JsonCodeEditorProps {
   id: string
@@ -12,7 +12,7 @@ interface JsonCodeEditorProps {
   onChange: (value: string) => void
 }
 
-const jsonEditorTheme = EditorView.theme({
+const snbtEditorTheme = EditorView.theme({
   '&': {
     backgroundColor: 'transparent',
     color: 'var(--foreground)',
@@ -47,7 +47,7 @@ const jsonEditorTheme = EditorView.theme({
   }
 })
 
-const jsonEditorExtensions = [json(), oneDark, jsonEditorTheme, EditorView.lineWrapping]
+const snbtEditorExtensions = [snbtHighlightPlugin, snbtHighlightTheme, oneDarkTheme, snbtEditorTheme, EditorView.lineWrapping]
 
 const fillHeightEditorTheme = EditorView.theme({
   '&': {
@@ -61,22 +61,22 @@ const fillHeightEditorTheme = EditorView.theme({
   }
 })
 
-function buildJsonEditorExtensions(fillHeight: boolean): typeof jsonEditorExtensions {
+function buildSnbtEditorExtensions(fillHeight: boolean): typeof snbtEditorExtensions {
   // 可変高さのときは CodeMirror 本体を親高さに合わせる
   if (fillHeight) {
-    return [...jsonEditorExtensions, fillHeightEditorTheme]
+    return [...snbtEditorExtensions, fillHeightEditorTheme]
   }
-  return jsonEditorExtensions
+  return snbtEditorExtensions
 }
 
 /**
- * JSON 編集専用のコードエディタ。
+ * SNBT 編集専用のコードエディタ。
  *
  * @param id - 入力欄識別子
- * @param value - 表示する JSON 文字列
+ * @param value - 表示する SNBT 文字列
  * @param disabled - 編集不可にする場合は true
  * @param onChange - 編集内容変更時の通知
- * @returns JSON 構文ハイライト付きエディタ
+ * @returns SNBT 構文ハイライト付きエディタ
  */
 export function JsonCodeEditor({
   id,
@@ -86,7 +86,7 @@ export function JsonCodeEditor({
   onChange
 }: JsonCodeEditorProps): JSX.Element {
   let isEditable = true
-  // 操作中は JSON 編集を受け付けない
+  // 操作中は SNBT 編集を受け付けない
   if (disabled) {
     isEditable = false
   }
@@ -105,7 +105,7 @@ export function JsonCodeEditor({
         id={id}
         value={value}
         height={editorHeight}
-        extensions={buildJsonEditorExtensions(fillHeight)}
+        extensions={buildSnbtEditorExtensions(fillHeight)}
         editable={isEditable}
         basicSetup={{
           lineNumbers: true,
@@ -115,7 +115,7 @@ export function JsonCodeEditor({
           autocompletion: false
         }}
         onChange={(nextValue) => {
-          // 親コンポーネントへ JSON 文字列の変更を通知する
+          // 親コンポーネントへ SNBT 文字列の変更を通知する
           onChange(nextValue)
         }}
       />
