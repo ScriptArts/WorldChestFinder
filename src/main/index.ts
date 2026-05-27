@@ -50,7 +50,7 @@ function createWindow(): void {
 app.whenReady().then(async () => {
   installProcessErrorHandlers()
   const logsDirectory = await initLogger()
-  logger.info('app', 'アプリケーション起動', {
+  logger.info('app', 'ソフトウェア起動', {
     version: app.getVersion(),
     packaged: app.isPackaged,
     platform: process.platform,
@@ -77,13 +77,13 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
-  // macOS 以外では全ウィンドウ終了でアプリを終了する
+  // macOS 以外では全ウィンドウ終了でソフトウェアを終了する
   if (process.platform !== 'darwin') {
-    logger.info('app', '全ウィンドウ終了のためアプリを終了')
+    logger.info('app', '全ウィンドウ終了のためソフトウェアを終了')
     app.quit()
   }
 })
 
 app.on('before-quit', () => {
-  logger.info('app', 'アプリケーション終了')
+  logger.info('app', 'ソフトウェア終了')
 })

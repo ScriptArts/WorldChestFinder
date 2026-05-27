@@ -107,9 +107,14 @@ export interface AssetsStatus {
   worldPackLoaded: boolean
 }
 
+import type { WorldMetadata } from './world/WorldFormat'
+
+export type { WorldFormat, WorldMetadata } from './world/WorldFormat'
+
 /** ワールドスキャンの結果 */
 export interface ScanResult {
   worldPath: string
+  worldMetadata: WorldMetadata
   containers: ContainerRecord[]
   errors: string[]
 }

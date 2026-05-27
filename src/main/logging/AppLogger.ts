@@ -37,7 +37,7 @@ let activeLogFilePath = ''
  *
  * @param isPackaged - パッケージ済みビルドか
  * @param userDataPath - Electron userData パス
- * @param appPath - Electron アプリケーションパス（開発時はプロジェクトルート）
+ * @param appPath - Electron ソフトウェアパス（開発時はプロジェクトルート）
  */
 export function resolveLogsDirectory(isPackaged: boolean, userDataPath: string, appPath: string): string {
   // 開発時はプロジェクト配下の logs ディレクトリを使う
@@ -397,7 +397,7 @@ export function installProcessErrorHandlers(): void {
   })
 }
 
-/** アプリケーション共通ロガー */
+/** ソフトウェア共通ロガー */
 export const logger = {
   /**
    * DEBUG レベルのログを出力する。

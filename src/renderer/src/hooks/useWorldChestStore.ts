@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { AssetDownloadProgress, AssetsStatus, ContainerRecord, SaveProgress, SaveStatus, ScanProgress, ScanResult, SearchFilter } from '../../../shared/types'
 
-/** アプリ全体のワールド・スキャン・保存状態 */
+/** ソフトウェア全体のワールド・スキャン・保存状態 */
 interface WorldChestState {
   worldPath: string | null
   assetsStatus: AssetsStatus | null

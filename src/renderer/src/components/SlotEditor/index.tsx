@@ -4,6 +4,7 @@ import { getInt, getString } from '../../../../shared/nbt/nbtAccess'
 import { buildItemSnbt, SnbtParseError, snbtToCompound } from '../../../../shared/nbt/SnbtCodec'
 import type { NbtCompound } from '../../../../shared/nbt/nbtTypes'
 import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
+import { readItemCount, type WorldFormat } from '../../../../shared/world/WorldFormat'
 import { Button } from '../ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { JsonCodeEditor } from '../ui/json-code-editor'
@@ -12,6 +13,7 @@ import { Label } from '../ui/label'
 interface SlotEditorProps {
   container: ContainerRecord | null
   slot: number | null
+  worldFormat: WorldFormat | null
   onUpdated: (container: ContainerRecord, targetSlot?: number) => void
   onError: (message: string) => void
   disabled?: boolean
@@ -63,14 +65,10 @@ function parseItemId(compound: NbtCompound): string | null {
   return itemId
 }
 
-function parseItemCount(compound: NbtCompound): number | null {
-  let value = getInt(compound, 'count')
-  // count がなければ legacy の Count を参照する
-  if (value === undefined) {
-    value = getInt(compound, 'Count')
-  }
+function parseItemCount(compound: NbtCompound, worldFormat: WorldFormat): number | null {
+  const value = readItemCount(compound, worldFormat)
   // 個数は 0 以上の整数である必要がある
-  if (value === undefined || Number.isNaN(value) || !Number.isInteger(value)) {
+  if (Number.isNaN(value) || !Number.isInteger(value)) {
     return null
   }
   return value
@@ -85,7 +83,7 @@ function parseItemCount(compound: NbtCompound): number | null {
  * @param onError - エラーメッセージ通知
  * @param disabled - 操作中は true
  */
-export function SlotEditor({ container, slot, onUpdated, onError, disabled = false }: SlotEditorProps): JSX.Element {
+export function SlotEditor({ container, slot, worldFormat, onUpdated, onError, disabled = false }: SlotEditorProps): JSX.Element {
   const [nbtSnbt, setNbtSnbt] = useState('{}')
   const [isApplying, setIsApplying] = useState(false)
   const applyingRef = useRef(false)
@@ -100,17 +98,20 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
     activeTargetRef.current = { containerId: container.id, slot }
     const existing = container.items.find((entry) => entry.slot === slot)
 
-    let nextSnbt = buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0)
+    let nextSnbt = '{}'
+    if (worldFormat !== null) {
+      nextSnbt = buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0, worldFormat.usesLegacyItemCount)
+    }
     // 既存アイテムがあればその SNBT をエディタへ読み込む
     if (existing !== undefined) {
       nextSnbt = existing.raw
     }
 
     setNbtSnbt(nextSnbt)
-  }, [container, slot])
+  }, [container, slot, worldFormat])
 
-  // コンテナまたはスロット未選択時は案内を表示する
-  if (!container || slot === null) {
+  // コンテナまたはスロット未選択、またはワールド形式不明時は案内を表示する
+  if (!container || slot === null || worldFormat === null) {
     return (
       <Card>
         <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -172,7 +173,7 @@ export function SlotEditor({ container, slot, onUpdated, onError, disabled = fal
         onError('id は空でない文字列で指定してください')
         return
       }
-      const count = parseItemCount(compound)
+      const count = parseItemCount(compound, worldFormat)
       // 個数が不正ならエラーを表示する
       if (count === null || count < 0 || count > 64) {
         onError('count または Count は 0 〜 64 の整数で指定してください')

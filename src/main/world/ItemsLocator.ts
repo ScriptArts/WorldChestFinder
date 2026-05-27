@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import type { ContainerRecord, SourceType } from '../../shared/types'
+import type { WorldFormat } from '../../shared/world/WorldFormat'
 import { coalesce } from '../../shared/valueUtils'
 import type { NbtCompound } from './nbtUtils'
 import { getCompoundFieldFirst, getIntFirst, getListItems, getString, isList } from './nbtUtils'
@@ -99,13 +100,14 @@ export function hitsToContainers(
     regionFile: string
     chunkX: number
     chunkZ: number
-  }
+  },
+  worldFormat: WorldFormat
 ): ContainerRecord[] {
   const containers: ContainerRecord[] = []
   // 各 ItemsHit を ContainerRecord に変換する
   for (const hit of hits) {
     const blockEntityId = coalesce(getString(hit.ownerCompound, 'id'), 'unknown')
-    const items = parseItemsList(getListItems(hit.ownerCompound, 'Items'))
+    const items = parseItemsList(getListItems(hit.ownerCompound, 'Items'), worldFormat)
     const position = extractPosition(hit.ownerCompound)
     let posX = 0
     let posY = 0

@@ -1,6 +1,7 @@
 import { MinecraftIds } from '../../shared/minecraftIds'
 import { buildItemSnbt, replaceSlotInSnbt, snbtToCompound } from '../../shared/nbt/SnbtCodec'
 import type { ItemStackView } from '../../shared/types'
+import type { WorldFormat } from '../../shared/world/WorldFormat'
 import type { NbtCompound } from './nbtUtils'
 import { parseItemsList } from './ItemStackParser'
 import { getCompoundField, getInt, getListItems, isList } from './nbtUtils'
@@ -20,50 +21,12 @@ function getItemsListEntries(owner: NbtCompound): unknown[] {
   return (owner.Items!.value as { value: unknown[] }).value
 }
 
-function setSlotField(compound: NbtCompound | undefined, slot: number): void {
-  // compound が無い場合は何もしない
-  if (!compound) {
-    return
-  }
-  // 既存 Slot タグがあれば値を更新する
-  if (compound.Slot) {
-    compound.Slot.value = slot
-    return
-  }
-  compound.Slot = { type: 'byte', value: slot }
-}
-
-function setItemIdField(compound: NbtCompound | undefined, itemId: string): void {
-  // compound が無い場合は何もしない
-  if (!compound) {
-    return
-  }
-  // 既存 id タグがあれば値を更新する
-  if (compound.id) {
-    compound.id.value = itemId
-    return
-  }
-  compound.id = { type: 'string', value: itemId }
-}
-
-function setCountField(compound: NbtCompound | undefined, count: number): void {
-  // compound が無い場合は何もしない
-  if (!compound) {
-    return
-  }
-  // 新形式 count タグがあれば値を更新する
-  if (compound.count) {
-    compound.count.value = count
-    return
-  }
-  // 旧形式 Count タグがあれば値を更新する
-  if (compound.Count) {
-    compound.Count.value = count
-    return
-  }
-  compound.Count = { type: 'byte', value: count }
-}
-
+/**
+ * ItemStackView の SNBT を NBT compound へそのまま反映する。
+ *
+ * @param compound - 更新対象 compound
+ * @param item - SNBT を持つアイテム
+ */
 function applyRawItemView(compound: NbtCompound, item: ItemStackView): void {
   const nextCompound = snbtToCompound(item.raw)
   // SNBT から削除されたキーを NBT からも削除する
@@ -76,23 +39,27 @@ function applyRawItemView(compound: NbtCompound, item: ItemStackView): void {
   }
 }
 
+/**
+ * item.raw（SNBT）を NBT compound へ書き込む。
+ *
+ * @param compound - 更新対象 compound
+ * @param item - SNBT を持つアイテム
+ */
 function applyItemView(compound: NbtCompound | undefined, item: ItemStackView): void {
   // compound が無い場合は何もしない
   if (!compound) {
     return
   }
   applyRawItemView(compound, item)
-  setSlotField(compound, item.slot)
-  setItemIdField(compound, item.itemId)
-  setCountField(compound, item.count)
 }
 
+/**
+ * item.raw（SNBT）から書き込み用 compound を生成する。
+ *
+ * @param item - SNBT を持つアイテム
+ */
 function createItemCompound(item: ItemStackView): NbtCompound {
-  const compound = snbtToCompound(item.raw)
-  setSlotField(compound, item.slot)
-  setItemIdField(compound, item.itemId)
-  setCountField(compound, item.count)
-  return compound
+  return snbtToCompound(item.raw)
 }
 
 function findEntryIndexBySlot(entries: unknown[], slot: number): number {
@@ -118,8 +85,9 @@ function findEntryIndexBySlot(entries: unknown[], slot: number): number {
  *
  * @param owner - Items タグを持つ compound
  * @param items - 新しいアイテム一覧
+ * @param worldFormat - GUI 表示用の再パースに使用
  */
-export function setItemsInCompound(owner: NbtCompound, items: ItemStackView[]): void {
+export function setItemsInCompound(owner: NbtCompound, items: ItemStackView[], worldFormat: WorldFormat): void {
   const entries = getItemsListEntries(owner)
   entries.length = 0
   // 全スロットを新しい compound エントリで再構築する
@@ -134,9 +102,15 @@ export function setItemsInCompound(owner: NbtCompound, items: ItemStackView[]): 
  * @param owner - Items タグを持つ compound
  * @param slot - 対象スロット
  * @param item - 新しい内容（null で空スロット）
+ * @param worldFormat - GUI 表示用の再パースに使用
  * @returns 更新後の Items 一覧
  */
-export function updateSlotInCompound(owner: NbtCompound, slot: number, item: ItemStackView | null): ItemStackView[] {
+export function updateSlotInCompound(
+  owner: NbtCompound,
+  slot: number,
+  item: ItemStackView | null,
+  worldFormat: WorldFormat
+): ItemStackView[] {
   const entries = getItemsListEntries(owner)
   const index = findEntryIndexBySlot(entries, slot)
 
@@ -154,7 +128,7 @@ export function updateSlotInCompound(owner: NbtCompound, slot: number, item: Ite
     entries.splice(index, 1)
   }
 
-  return parseItemsList(getListItems(owner, 'Items'))
+  return parseItemsList(getListItems(owner, 'Items'), worldFormat)
 }
 
 function withSlotNumber(item: ItemStackView, slot: number): ItemStackView {
@@ -171,22 +145,24 @@ function withSlotNumber(item: ItemStackView, slot: number): ItemStackView {
  * @param owner - Items タグを持つ compound
  * @param fromSlot - 編集元スロット
  * @param item - 反映するアイテム（Slot 番号は移動先を示す場合あり）
+ * @param worldFormat - GUI 表示用の再パースに使用
  * @returns 更新後の Items 一覧
  */
 export function transferSlotItem(
   owner: NbtCompound,
   fromSlot: number,
-  item: ItemStackView | null
+  item: ItemStackView | null,
+  worldFormat: WorldFormat
 ): ItemStackView[] {
   // 空スロットまたは air アイテムの場合は削除処理へ委譲する
   if (!item || item.itemId === MinecraftIds.ITEM_AIR || item.count <= 0) {
-    return updateSlotInCompound(owner, fromSlot, null)
+    return updateSlotInCompound(owner, fromSlot, null, worldFormat)
   }
 
   const toSlot = item.slot
   // 移動元と移動先が同じ場合は単純更新する
   if (fromSlot === toSlot) {
-    return updateSlotInCompound(owner, fromSlot, item)
+    return updateSlotInCompound(owner, fromSlot, item, worldFormat)
   }
 
   const entries = getItemsListEntries(owner)
@@ -202,21 +178,21 @@ export function transferSlotItem(
     } else {
       entries.push({ type: 'compound', value: createItemCompound(item) })
     }
-    return parseItemsList(getListItems(owner, 'Items'))
+    return parseItemsList(getListItems(owner, 'Items'), worldFormat)
   }
 
   const fromCompound = entryCompound(entries[fromIndex])
-  // 移動先が空スロットの場合は移動元の Slot を更新する
+  // 移動先が空スロットの場合は SNBT の Slot だけ更新して反映する
   if (toIndex < 0) {
     applyItemView(fromCompound, item)
-    return parseItemsList(getListItems(owner, 'Items'))
+    return parseItemsList(getListItems(owner, 'Items'), worldFormat)
   }
 
   const toCompound = entryCompound(entries[toIndex])
-  const displaced = parseItemsList([toCompound])[0]
+  const displaced = parseItemsList([toCompound], worldFormat)[0]
   applyItemView(fromCompound, withSlotNumber(item, toSlot))
   applyItemView(toCompound, withSlotNumber(displaced, fromSlot))
-  return parseItemsList(getListItems(owner, 'Items'))
+  return parseItemsList(getListItems(owner, 'Items'), worldFormat)
 }
 
 /**
@@ -225,36 +201,43 @@ export function transferSlotItem(
  * @param owner - Items タグを持つ compound
  * @param fromSlot - 移動元
  * @param toSlot - 移動先
+ * @param worldFormat - GUI 表示用の再パースに使用
  * @returns 更新後の Items 一覧
  */
-export function moveSlotInCompound(owner: NbtCompound, fromSlot: number, toSlot: number): ItemStackView[] {
+export function moveSlotInCompound(
+  owner: NbtCompound,
+  fromSlot: number,
+  toSlot: number,
+  worldFormat: WorldFormat
+): ItemStackView[] {
   // 移動元と移動先が同じ場合は変更なし
   if (fromSlot === toSlot) {
-    return parseItemsList(getListItems(owner, 'Items'))
+    return parseItemsList(getListItems(owner, 'Items'), worldFormat)
   }
 
   const entries = getItemsListEntries(owner)
   const fromIndex = findEntryIndexBySlot(entries, fromSlot)
   // 移動元にアイテムが無い場合は変更なし
   if (fromIndex < 0) {
-    return parseItemsList(getListItems(owner, 'Items'))
+    return parseItemsList(getListItems(owner, 'Items'), worldFormat)
   }
 
   const toIndex = findEntryIndexBySlot(entries, toSlot)
   const fromCompound = entryCompound(entries[fromIndex])
 
-  // 移動先が空スロットの場合は Slot 番号だけ更新する
+  // 移動先が空スロットの場合は SNBT の Slot だけ更新して反映する
   if (toIndex < 0) {
-    setSlotField(fromCompound, toSlot)
-    return parseItemsList(getListItems(owner, 'Items'))
+    const fromItem = parseItemsList([fromCompound], worldFormat)[0]
+    applyItemView(fromCompound, withSlotNumber(fromItem, toSlot))
+    return parseItemsList(getListItems(owner, 'Items'), worldFormat)
   }
 
   const toCompound = entryCompound(entries[toIndex])
-  const fromItem = parseItemsList([fromCompound])[0]
-  const toItem = parseItemsList([toCompound])[0]
+  const fromItem = parseItemsList([fromCompound], worldFormat)[0]
+  const toItem = parseItemsList([toCompound], worldFormat)[0]
   applyItemView(fromCompound, withSlotNumber(toItem, fromSlot))
   applyItemView(toCompound, withSlotNumber(fromItem, toSlot))
-  return parseItemsList(getListItems(owner, 'Items'))
+  return parseItemsList(getListItems(owner, 'Items'), worldFormat)
 }
 
 /**
@@ -271,18 +254,24 @@ export function ensureItemsList(owner: NbtCompound): void {
 }
 
 /**
- * デフォルト値付きの ItemStackView を生成する。
+ * 新規 SNBT テンプレート付きの ItemStackView を生成する。
  *
  * @param slot - スロット番号
  * @param itemId - アイテム ID
  * @param count - 個数
+ * @param worldFormat - 空 SNBT テンプレート生成に使用
  */
-export function createDefaultItem(slot: number, itemId: string, count: number): ItemStackView {
+export function createDefaultItem(
+  slot: number,
+  itemId: string,
+  count: number,
+  worldFormat: WorldFormat
+): ItemStackView {
   return {
     slot,
     itemId,
     count,
     displaySummary: '',
-    raw: buildItemSnbt(slot, itemId, count)
+    raw: buildItemSnbt(slot, itemId, count, worldFormat.usesLegacyItemCount)
   }
 }

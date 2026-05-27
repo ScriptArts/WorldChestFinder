@@ -76,8 +76,24 @@ export function snbtToCompound(snbt: string): NbtCompound {
  * @param slot - スロット番号
  * @param itemId - アイテム ID
  * @param count - 個数
+ * @param usesLegacyItemCount - 空 SNBT テンプレートで Count (byte) を使う場合 true
  */
-export function buildItemSnbt(slot: number, itemId: string, count: number): string {
+export function buildItemSnbt(
+  slot: number,
+  itemId: string,
+  count: number,
+  usesLegacyItemCount: boolean
+): string {
+  if (usesLegacyItemCount) {
+    return compoundToSnbt(
+      {
+        Slot: { type: 'byte', value: slot },
+        id: { type: 'string', value: itemId },
+        Count: { type: 'byte', value: count }
+      },
+      { pretty: true }
+    )
+  }
   return compoundToSnbt(
     {
       Slot: { type: 'byte', value: slot },

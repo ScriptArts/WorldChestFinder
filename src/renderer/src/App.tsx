@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, Save, Search } from 'lucide-react'
 import type { SearchFilter } from '../../shared/types'
+import { buildWorldMetadata, createWorldFormat } from '../../shared/world/WorldFormat'
 import { coalesce, formatError } from '../../shared/valueUtils'
 import { ChestGrid } from './components/ChestGrid'
 import { ConfirmDialog } from './components/ConfirmDialog'
@@ -50,7 +51,7 @@ function getSaveNoticeClassName(kind: 'success' | 'error' | 'info'): string {
   return 'border-b border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium'
 }
 
-/** メインアプリケーション（ワールド選択・スキャン・編集・保存） */
+/** メインソフトウェア（ワールド選択・スキャン・編集・保存） */
 export default function App(): JSX.Element {
   const [isScanning, setIsScanning] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
@@ -75,6 +76,7 @@ export default function App(): JSX.Element {
     setWorldPath,
     setAssetsStatus,
     setAssetProgress,
+    scanResult,
     setScanResult,
     setProgress,
     setSaveProgress,
@@ -163,7 +165,12 @@ export default function App(): JSX.Element {
 
   function clearWorldPreview(path: string): void {
     setWorldPath(path)
-    setScanResult({ worldPath: path, containers: [], errors: [] })
+    setScanResult({
+      worldPath: path,
+      worldMetadata: buildWorldMetadata(0, null, path.split(/[/\\]/).pop() || path),
+      containers: [],
+      errors: []
+    })
     setContainers([])
   }
 
@@ -274,7 +281,7 @@ export default function App(): JSX.Element {
       setContainers(nextContainers)
       // スキャン完了後に保存状態を同期する
       await refreshSaveStatus()
-      setStatusMessage(`スキャン完了: ${result.containers.length} コンテナ (${result.errors.length} エラー)`)
+      setStatusMessage(`スキャン完了: ${result.containers.length} コンテナ (${result.errors.length} エラー) / MC ${createWorldFormat(result.worldMetadata).versionLabel}`)
       // 読み込み失敗があれば完了後に詳細ダイアログを表示する
       if (result.errors.length > 0) {
         setScanErrors(result.errors)
@@ -379,9 +386,18 @@ export default function App(): JSX.Element {
     }
   }
 
+  const worldFormat = useMemo(() => {
+    if (scanResult === null) {
+      return null
+    }
+    return createWorldFormat(scanResult.worldMetadata)
+  }, [scanResult])
+
+  const worldWritable = scanResult !== null && scanResult.worldMetadata.supported
+
   const assetsReady = assetsStatus !== null && assetsStatus.ready
   const canScan = worldPath !== null && assetsReady && !isBusy && saveStatus.pendingRegionCount === 0
-  const canSave = !isBusy && saveStatus.worldLoaded && saveStatus.pendingRegionCount > 0
+  let canSave = !isBusy && saveStatus.worldLoaded && saveStatus.pendingRegionCount > 0 && worldWritable
 
   let saveButtonVariant: 'default' | 'outline' = 'outline'
   // 保存中はボタンを強調表示する
@@ -405,6 +421,11 @@ export default function App(): JSX.Element {
   // バニラバージョンが取得できていれば表示名を差し替える
   if (assetsStatus !== null && assetsStatus.vanillaVersion !== null) {
     vanillaVersionLabel = assetsStatus.vanillaVersion
+  }
+
+  let worldVersionLabel = ''
+  if (worldFormat !== null) {
+    worldVersionLabel = `${worldFormat.versionLabel} (DV ${worldFormat.dataVersion})`
   }
 
   async function moveSelectedSlot(fromSlot: number, toSlot: number): Promise<void> {
@@ -488,6 +509,11 @@ export default function App(): JSX.Element {
           >
             {worldPathLabel}
           </span>
+          {worldVersionLabel !== '' && (
+            <Badge variant={worldWritable ? 'secondary' : 'destructive'} title={`DataVersion ${scanResult?.worldMetadata.dataVersion}`}>
+              World: {worldVersionLabel}
+            </Badge>
+          )}
           {assetsReady && (
             <Badge variant="secondary">Vanilla: {vanillaVersionLabel}</Badge>
           )}
@@ -570,7 +596,7 @@ export default function App(): JSX.Element {
               container={selectedContainer}
               selectedSlot={selectedSlot}
               onSelectSlot={selectSlot}
-              disabled={isBusy}
+              disabled={isBusy || !worldWritable}
               onMoveSlot={moveSelectedSlot}
             />
           </div>
@@ -578,7 +604,8 @@ export default function App(): JSX.Element {
             <SlotEditor
               container={selectedContainer}
               slot={selectedSlot}
-              disabled={isBusy}
+              worldFormat={worldFormat}
+              disabled={isBusy || !worldWritable}
               onUpdated={handleSlotUpdated}
               onError={setStatusMessage}
             />

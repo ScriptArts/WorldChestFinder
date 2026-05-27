@@ -1,4 +1,5 @@
 import type { ContainerRecord, ItemStackView, LargeChestHalf, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
+import type { WorldFormat } from '../shared/world/WorldFormat'
 import { replaceSlotInSnbt } from '../shared/nbt/SnbtCodec'
 import { invokeOptional } from '../shared/valueUtils'
 import { logger } from './logging/AppLogger'
@@ -154,7 +155,7 @@ function findBindingForHalf(
 }
 
 /**
- * ワールドの読み込み・編集・保存を担うアプリケーションセッション。
+ * ワールドの読み込み・編集・保存を担うソフトウェアセッション。
  *
  * @remarks
  * スキャン結果と未保存のリージョン変更をメモリ上で保持する。
@@ -255,6 +256,27 @@ export class AppSession {
     return region
   }
 
+  private getWorldFormat(): WorldFormat | null {
+    if (!this.session) {
+      return null
+    }
+    return this.session.worldFormat
+  }
+
+  private assertWorldWritable(): boolean {
+    if (!this.session) {
+      return false
+    }
+    if (!this.session.worldFormat.supported) {
+      logger.warn('session', '非対応ワールド形式のため編集を拒否', {
+        dataVersion: this.session.worldMetadata.dataVersion,
+        supportMessage: this.session.worldMetadata.supportMessage
+      })
+      return false
+    }
+    return true
+  }
+
   private markChunkDirty(binding: ContainerBinding): string {
     // 変更対象リージョンとチャンクを dirty として記録する
     this.dirtyRegions.add(binding.regionFile)
@@ -275,6 +297,10 @@ export class AppSession {
     owner: NbtCompound,
     updatedItems: ItemStackView[]
   ): ContainerRecord {
+    const worldFormat = this.getWorldFormat()
+    if (worldFormat === null) {
+      return container
+    }
     const refreshed = hitsToContainers(
       [{ nbtPath: container.nbtPath, sourceType: container.sourceType, ownerCompound: owner, itemsPath: container.nbtPath }],
       {
@@ -282,7 +308,8 @@ export class AppSession {
         regionFile: container.regionFile,
         chunkX: container.chunkX,
         chunkZ: container.chunkZ
-      }
+      },
+      worldFormat
     )[0]
 
     let nextItems = updatedItems
@@ -335,6 +362,8 @@ export class AppSession {
     return this.runExclusive(async () => {
       // セッション未初期化時は更新できない
       if (!this.session) return null
+      if (!this.assertWorldWritable()) return null
+      const worldFormat = this.session.worldFormat
       const containerIndex = this.session.containers.findIndex((e) => e.id === update.containerId)
       // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
@@ -349,12 +378,12 @@ export class AppSession {
           if (update.item) {
             localItem = { ...update.item, slot: localSlot, raw: replaceSlotInSnbt(update.item.raw, localSlot) }
           }
-          return transferSlotItem(owner, localSlot, localItem)
+          return transferSlotItem(owner, localSlot, localItem, worldFormat)
         })
       }
 
       return this.mutateContainer(update.containerId, (owner) =>
-        transferSlotItem(owner, update.slot, update.item)
+        transferSlotItem(owner, update.slot, update.item, worldFormat)
       )
     })
   }
@@ -369,6 +398,8 @@ export class AppSession {
     return this.runExclusive(async () => {
       // セッション未初期化時は移動できない
       if (!this.session) return null
+      if (!this.assertWorldWritable()) return null
+      const worldFormat = this.session.worldFormat
       const containerIndex = this.session.containers.findIndex((e) => e.id === move.containerId)
       // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
@@ -380,7 +411,7 @@ export class AppSession {
       }
 
       return this.mutateContainer(move.containerId, (owner) =>
-        moveSlotInCompound(owner, move.fromSlot, move.toSlot)
+        moveSlotInCompound(owner, move.fromSlot, move.toSlot, worldFormat)
       )
     })
   }
@@ -505,7 +536,7 @@ export class AppSession {
     // 同じ片側チェスト内の移動は単一 owner の更新で処理する
     if (fromSide === toSide) {
       return this.mutateLargeChest(containerIndex, fromSlot, (owner) =>
-        moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot))
+        moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot), this.session!.worldFormat)
       )
     }
 
@@ -538,25 +569,27 @@ export class AppSession {
       return null
     }
 
+    const worldFormat = this.session.worldFormat
+
     const localFrom = toLocalSlot(fromSlot)
     const localTo = toLocalSlot(toSlot)
 
-    const fromItems = parseItemsList(getListItems(fromOwner, 'Items'))
-    const toItems = parseItemsList(getListItems(toOwner, 'Items'))
+    const fromItems = parseItemsList(getListItems(fromOwner, 'Items'), worldFormat)
+    const toItems = parseItemsList(getListItems(toOwner, 'Items'), worldFormat)
     const fromItem = fromItems.find((i) => i.slot === localFrom) || null
     const toItem = toItems.find((i) => i.slot === localTo) || null
 
     // 移動元にアイテムがある場合は移動先 owner へ移す
     if (fromItem) {
-      transferSlotItem(fromOwner, localFrom, null)
+      transferSlotItem(fromOwner, localFrom, null, worldFormat)
       const movedItem = { ...fromItem, slot: localTo, raw: replaceSlotInSnbt(fromItem.raw, localTo) }
-      transferSlotItem(toOwner, localTo, movedItem)
+      transferSlotItem(toOwner, localTo, movedItem, worldFormat)
     }
     // 移動先にアイテムがある場合は元スロットへ戻して入れ替える
     if (toItem) {
-      transferSlotItem(toOwner, localTo, null)
+      transferSlotItem(toOwner, localTo, null, worldFormat)
       const movedBack = { ...toItem, slot: localFrom, raw: replaceSlotInSnbt(toItem.raw, localFrom) }
-      transferSlotItem(fromOwner, localFrom, movedBack)
+      transferSlotItem(fromOwner, localFrom, movedBack, worldFormat)
     }
 
     const fromBinding = findBindingForHalf(fromHalf, this.session)
@@ -583,6 +616,7 @@ export class AppSession {
     }
     const container = this.session.containers[containerIndex]
     const pair = container.largeChest!
+    const worldFormat = this.session.worldFormat
 
     const primaryOwner = resolveOwnerForHalf(pair.primary, this.session)
     const secondaryOwner = resolveOwnerForHalf(pair.secondary, this.session)
@@ -590,7 +624,7 @@ export class AppSession {
     let primaryItems: ItemStackView[]
     // primary owner が見つかった場合だけ Items を読み直す
     if (primaryOwner) {
-      primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'))
+      primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'), worldFormat)
     // primary owner が見つからない場合は空配列とする
     } else {
       primaryItems = []
@@ -599,7 +633,7 @@ export class AppSession {
     let secondaryItems: ItemStackView[]
     // secondary owner が見つかった場合だけ Items を読み直す
     if (secondaryOwner) {
-      secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'))
+      secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'), worldFormat)
     // secondary owner が見つからない場合は空配列とする
     } else {
       secondaryItems = []
@@ -644,6 +678,14 @@ export class AppSession {
     if (!this.session) {
       logger.warn('session', '保存失敗: ワールド未読み込み')
       return { success: false, savedFiles: [], errors: ['ワールドが読み込まれていません。先にスキャンしてください。'] }
+    }
+    if (!this.assertWorldWritable()) {
+      const message = this.session.worldMetadata.supportMessage
+      let errorMessage = 'このワールド形式は保存に対応していません。'
+      if (message !== null) {
+        errorMessage = message
+      }
+      return { success: false, savedFiles: [], errors: [errorMessage] }
     }
 
     // 変更が無い場合は保存をスキップする

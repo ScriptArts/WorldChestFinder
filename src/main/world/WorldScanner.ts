@@ -1,8 +1,10 @@
 import { readdir, stat } from 'fs/promises'
 import path from 'path'
-import type { ContainerRecord, ScanProgress, ScanResult } from '../../shared/types'
+import type { ContainerRecord, ScanProgress, ScanResult, WorldMetadata } from '../../shared/types'
+import { createWorldFormat, type WorldFormat } from '../../shared/world/WorldFormat'
 import { formatError, invokeOptional } from '../../shared/valueUtils'
 import { logger } from '../logging/AppLogger'
+import { readWorldMetadata } from './LevelDatReader'
 import { readRegion, type ChunkData, type LoadedRegion } from './AnvilRegionReader'
 import { findItemsHits, hitsToContainers } from './ItemsLocator'
 import { mergeLargeChests } from './LargeChestMerger'
@@ -21,6 +23,8 @@ export interface ContainerBinding {
 /** スキャン後の in-memory セッション状態 */
 export interface ScanSession {
   worldPath: string
+  worldMetadata: WorldMetadata
+  worldFormat: WorldFormat
   regions: Map<string, LoadedRegion>
   containers: ContainerRecord[]
   bindings: Map<string, ContainerBinding>
@@ -122,14 +126,23 @@ function resolveChunkCoordinates(
  */
 export async function scanWorld(worldPath: string, onProgress?: ProgressCallback): Promise<ScanSession> {
   const startedAt = Date.now()
+  const worldMetadata = await readWorldMetadata(worldPath)
+  const worldFormat = createWorldFormat(worldMetadata)
   const mcaFiles = await findMcaFiles(worldPath)
   logger.info('scan', 'リージョンファイル一覧を取得', {
     worldPath,
-    regionFileCount: mcaFiles.length
+    regionFileCount: mcaFiles.length,
+    dataVersion: worldMetadata.dataVersion,
+    versionName: worldMetadata.versionName
   })
   const containers: ContainerRecord[] = []
   const bindings = new Map<string, ContainerBinding>()
   const errors: string[] = []
+
+  // level.dat の形式が非対応なら警告を記録する
+  if (worldMetadata.supportMessage !== null) {
+    errors.push(worldMetadata.supportMessage)
+  }
 
   invokeOptional(onProgress, {
     phase: 'scan-discovery',
@@ -176,7 +189,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
           regionFile: mcaPath,
           chunkX: chunkCoords.chunkX,
           chunkZ: chunkCoords.chunkZ
-        })
+        }, worldFormat)
 
         // チャンク内の各コンテナに binding を登録する
         for (const container of chunkContainers) {
@@ -230,6 +243,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
     worldPath,
     durationMs: Date.now() - startedAt,
     regionFileCount: mcaFiles.length,
+    dataVersion: worldMetadata.dataVersion,
     containerCount: mergedContainers.length,
     largeChestCount: mergedContainers.filter((c) => c.largeChest).length,
     errorCount: errors.length
@@ -237,6 +251,8 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
 
   return {
     worldPath,
+    worldMetadata,
+    worldFormat,
     regions: new Map<string, LoadedRegion>(),
     containers: mergedContainers,
     bindings,
@@ -253,6 +269,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
 export function toScanResult(session: ScanSession): ScanResult {
   return {
     worldPath: session.worldPath,
+    worldMetadata: session.worldMetadata,
     containers: session.containers,
     errors: session.errors
   }
