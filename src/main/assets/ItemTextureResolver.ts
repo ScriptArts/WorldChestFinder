@@ -9,6 +9,12 @@ interface ParsedItemId {
   itemPath: string
 }
 
+interface ParsedModelRef {
+  namespace: string
+  modelType: string
+  modelName: string
+}
+
 function parseItemId(itemId: string): ParsedItemId {
   const separator = itemId.indexOf(':')
   // 名前空間区切りがない場合は minecraft を既定とする
@@ -18,6 +24,29 @@ function parseItemId(itemId: string): ParsedItemId {
   return {
     namespace: itemId.slice(0, separator),
     itemPath: itemId.slice(separator + 1)
+  }
+}
+
+function parseModelRef(modelRef: string): ParsedModelRef | null {
+  let namespace = 'minecraft'
+  let pathPart = modelRef
+  const separator = modelRef.indexOf(':')
+  // 名前空間付き参照を分解する
+  if (separator >= 0) {
+    namespace = modelRef.slice(0, separator)
+    pathPart = modelRef.slice(separator + 1)
+  }
+
+  const parts = pathPart.split('/')
+  // block/tnt 形式でない参照は解釈できない
+  if (parts.length < 2) {
+    return null
+  }
+
+  return {
+    namespace,
+    modelType: parts[0],
+    modelName: parts.slice(1).join('/')
   }
 }
 
@@ -75,12 +104,21 @@ function normalizeTextureRef(ref: string): string {
 }
 
 function resolveTexturePath(packRoot: string, namespace: string, textureRef: string): string | null {
-  const normalized = normalizeTextureRef(textureRef)
+  let textureNamespace = namespace
+  let texturePathPart = textureRef
+  const separator = textureRef.indexOf(':')
+  // テクスチャ参照に名前空間が含まれる場合はそれを優先する
+  if (separator >= 0) {
+    textureNamespace = textureRef.slice(0, separator)
+    texturePathPart = textureRef.slice(separator + 1)
+  }
+
+  const normalized = normalizeTextureRef(texturePathPart)
   const candidates = [
-    path.join(packRoot, 'assets', namespace, 'textures', `${normalized}.png`),
-    path.join(packRoot, 'assets', namespace, 'textures', 'item', `${normalized}.png`),
-    path.join(packRoot, 'assets', namespace, 'textures', 'block', `${normalized}.png`),
-    path.join(packRoot, 'assets', namespace, 'textures', 'entity', `${normalized}.png`)
+    path.join(packRoot, 'assets', textureNamespace, 'textures', `${normalized}.png`),
+    path.join(packRoot, 'assets', textureNamespace, 'textures', 'item', `${normalized}.png`),
+    path.join(packRoot, 'assets', textureNamespace, 'textures', 'block', `${normalized}.png`),
+    path.join(packRoot, 'assets', textureNamespace, 'textures', 'entity', `${normalized}.png`)
   ]
 
   // 候補 PNG パスを順番に存在確認する
@@ -94,28 +132,58 @@ function resolveTexturePath(packRoot: string, namespace: string, textureRef: str
   return null
 }
 
-async function resolveFromModel(packRoot: string, parsed: ParsedItemId, visited: Set<string>): Promise<string | null> {
-  const modelPath = path.join(
+function buildModelFilePath(packRoot: string, parsed: ParsedModelRef): string {
+  return path.join(
     packRoot,
     'assets',
     parsed.namespace,
     'models',
-    'item',
-    `${parsed.itemPath}.json`
+    parsed.modelType,
+    `${parsed.modelName}.json`
   )
+}
 
-  // アイテムモデル JSON が存在しない場合は解決できない
-  if (!pathExists(modelPath)) {
+function extractFirstModelReference(node: unknown): string | null {
+  // 非オブジェクトは走査対象外
+  if (!node || typeof node !== 'object') {
     return null
   }
 
+  const record = node as Record<string, unknown>
+  // minecraft:model 定義から model 参照を取得する
+  if (record.type === 'minecraft:model' && typeof record.model === 'string') {
+    return record.model
+  }
+
+  // 子要素を再帰的に走査して最初の model 参照を探す
+  for (const value of Object.values(record)) {
+    const found = extractFirstModelReference(value)
+    if (found !== null) {
+      return found
+    }
+  }
+
+  return null
+}
+
+async function resolveFromModelFile(
+  packRoot: string,
+  modelFilePath: string,
+  defaultNamespace: string,
+  visited: Set<string>
+): Promise<string | null> {
   // 循環参照を防ぐため訪問済みモデルはスキップする
-  if (visited.has(modelPath)) {
+  if (visited.has(modelFilePath)) {
     return null
   }
-  visited.add(modelPath)
+  visited.add(modelFilePath)
 
-  const model = await readJsonFile(modelPath)
+  // モデル JSON が存在しない場合は解決できない
+  if (!pathExists(modelFilePath)) {
+    return null
+  }
+
+  const model = await readJsonFile(modelFilePath)
   // モデル JSON の読み込みに失敗した場合は解決できない
   if (!model) {
     return null
@@ -124,14 +192,14 @@ async function resolveFromModel(packRoot: string, parsed: ParsedItemId, visited:
   const layer0 = model.layer0
   // layer0 直接参照からテクスチャを解決する
   if (typeof layer0 === 'string') {
-    const resolved = resolveTexturePath(packRoot, parsed.namespace, layer0)
+    const resolved = resolveTexturePath(packRoot, defaultNamespace, layer0)
     // layer0 から解決できた場合は返す
     if (resolved) {
       return resolved
     }
   }
 
-  const textureFromModel = resolveFirstTextureValue(packRoot, parsed.namespace, readTextureValues(model))
+  const textureFromModel = resolveFirstTextureValue(packRoot, defaultNamespace, readTextureValues(model))
   // モデル内 textures から解決できた場合は返す
   if (textureFromModel) {
     return textureFromModel
@@ -141,29 +209,23 @@ async function resolveFromModel(packRoot: string, parsed: ParsedItemId, visited:
   // 親モデル参照がある場合は親からテクスチャを解決する
   if (typeof parent === 'string') {
     const parentRef = parent.replace(/^minecraft:/, '')
-    const parentParts = parentRef.split('/')
-    const parentType = parentParts[0]
-    const parentName = parentParts.slice(1).join('/')
+    // builtin 親はファイルを持たないためスキップする
+    if (parentRef.startsWith('builtin/')) {
+      return null
+    }
 
-    const parentModelPath = path.join(
-      packRoot,
-      'assets',
-      parsed.namespace,
-      'models',
-      parentType,
-      `${parentName}.json`
-    )
-
-    // 親モデル JSON が存在する場合は textures を参照する
-    if (pathExists(parentModelPath)) {
-      const parentModel = await readJsonFile(parentModelPath)
-      // 親モデルの読み込みに成功した場合
-      if (parentModel) {
-        const textureFromParent = resolveFirstTextureValue(packRoot, parsed.namespace, readTextureValues(parentModel))
-        // 親モデルからテクスチャを解決できた場合は返す
-        if (textureFromParent) {
-          return textureFromParent
-        }
+    const parsedParent = parseModelRef(parent)
+    // 親参照を解釈できた場合は親モデルを再帰的に辿る
+    if (parsedParent) {
+      const parentModelPath = buildModelFilePath(packRoot, parsedParent)
+      const textureFromParent = await resolveFromModelFile(
+        packRoot,
+        parentModelPath,
+        parsedParent.namespace,
+        visited
+      )
+      if (textureFromParent) {
+        return textureFromParent
       }
     }
 
@@ -172,7 +234,7 @@ async function resolveFromModel(packRoot: string, parsed: ParsedItemId, visited:
       const entityChest = path.join(
         packRoot,
         'assets',
-        parsed.namespace,
+        defaultNamespace,
         'textures',
         'entity',
         'chest',
@@ -186,6 +248,63 @@ async function resolveFromModel(packRoot: string, parsed: ParsedItemId, visited:
   }
 
   return null
+}
+
+async function resolveFromModelReference(
+  packRoot: string,
+  modelRef: string,
+  visited: Set<string>
+): Promise<string | null> {
+  const parsed = parseModelRef(modelRef)
+  // モデル参照を解釈できない場合は解決できない
+  if (!parsed) {
+    return null
+  }
+
+  const modelFilePath = buildModelFilePath(packRoot, parsed)
+  return resolveFromModelFile(packRoot, modelFilePath, parsed.namespace, visited)
+}
+
+async function resolveFromItemDefinition(
+  packRoot: string,
+  parsed: ParsedItemId,
+  visited: Set<string>
+): Promise<string | null> {
+  const itemDefinitionPath = path.join(
+    packRoot,
+    'assets',
+    parsed.namespace,
+    'items',
+    `${parsed.itemPath}.json`
+  )
+
+  // 1.21.4+ の item 定義が無い場合は旧形式へフォールバックする
+  if (!pathExists(itemDefinitionPath)) {
+    return null
+  }
+
+  const itemDefinition = await readJsonFile(itemDefinitionPath)
+  // item 定義の読み込みに失敗した場合は解決できない
+  if (!itemDefinition) {
+    return null
+  }
+
+  const modelReference = extractFirstModelReference(itemDefinition.model)
+  // model 参照が取れない場合は解決できない
+  if (modelReference === null) {
+    return null
+  }
+
+  return resolveFromModelReference(packRoot, modelReference, visited)
+}
+
+async function resolveFromLegacyItemModel(
+  packRoot: string,
+  parsed: ParsedItemId,
+  visited: Set<string>
+): Promise<string | null> {
+  const legacyModelRef = `${parsed.namespace}:item/${parsed.itemPath}`
+  return resolveFromModelReference(packRoot, legacyModelRef, visited)
 }
 
 async function resolveFromPackRoot(packRoot: string, parsed: ParsedItemId): Promise<string | null> {
@@ -221,7 +340,14 @@ async function resolveFromPackRoot(packRoot: string, parsed: ParsedItemId): Prom
     }
   }
 
-  return resolveFromModel(packRoot, parsed, new Set<string>())
+  const visited = new Set<string>()
+
+  const fromItemDefinition = await resolveFromItemDefinition(packRoot, parsed, visited)
+  if (fromItemDefinition) {
+    return fromItemDefinition
+  }
+
+  return resolveFromLegacyItemModel(packRoot, parsed, visited)
 }
 
 /**
