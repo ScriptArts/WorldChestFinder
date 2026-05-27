@@ -1,11 +1,35 @@
 /** スロット DnD 用の MIME タイプ */
 export const DRAG_MIME = 'application/x-worldchest-slot'
 
-/** ネイティブドラッグ画像を非表示にする 1x1 透明 GIF */
-const TRANSPARENT_DRAG_IMAGE =
-  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'
+/** setDragImage 用の非表示ホスト（DOM 添付が必要） */
+let nativeDragImageHost: HTMLDivElement | null = null
 
-let transparentDragImage: HTMLImageElement | null = null
+/**
+ * Electron / Chromium 向けに非表示ドラッグ画像ホストを body へ追加する。
+ *
+ * @remarks setDragImage は DOM 外の canvas だと初回ドラッグ時に地球アイコンが出ることがある
+ */
+export function prepareNativeDragImageHost(): void {
+  // SSR 等 document 未生成環境では何もしない
+  if (typeof document === 'undefined') {
+    return
+  }
+  // 既に追加済みなら再利用する
+  if (nativeDragImageHost !== null) {
+    return
+  }
+  const host = document.createElement('div')
+  host.setAttribute('aria-hidden', 'true')
+  host.style.position = 'fixed'
+  host.style.left = '-9999px'
+  host.style.top = '0'
+  host.style.width = '1px'
+  host.style.height = '1px'
+  host.style.opacity = '0'
+  host.style.pointerEvents = 'none'
+  document.body.appendChild(host)
+  nativeDragImageHost = host
+}
 
 /**
  * ブラウザ標準のドラッグゴースト画像を非表示にする。
@@ -13,12 +37,11 @@ let transparentDragImage: HTMLImageElement | null = null
  * @param event - dragstart イベント
  */
 export function hideNativeDragImage(event: React.DragEvent): void {
-  // 透明画像を初回だけ生成して再利用する
-  if (!transparentDragImage) {
-    transparentDragImage = new Image()
-    transparentDragImage.src = TRANSPARENT_DRAG_IMAGE
+  prepareNativeDragImageHost()
+  // body へ追加した透明ホストをネイティブドラッグ画像として使う
+  if (nativeDragImageHost !== null) {
+    event.dataTransfer.setDragImage(nativeDragImageHost, 0, 0)
   }
-  event.dataTransfer.setDragImage(transparentDragImage, 0, 0)
 }
 
 /** カスタムドラッグプレビューの表示状態 */

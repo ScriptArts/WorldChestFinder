@@ -4,7 +4,7 @@ import type { ContainerRecord } from '../../../../shared/types'
 import { formatContainerPosition } from '../../../../shared/containerUtils'
 import { Card, CardContent } from '../ui/card'
 import { ChestSlot } from './ChestSlot'
-import { DRAG_PREVIEW_OFFSET, type DragPreviewState } from './dragUtils'
+import { DRAG_PREVIEW_OFFSET, prepareNativeDragImageHost, type DragPreviewState } from './dragUtils'
 import { formatContainerTitle, getChestGridClass, getChestWindowClass } from './minecraftChestUtils'
 import { cn } from '@renderer/lib/utils'
 
@@ -24,9 +24,15 @@ function buildSlots(container: ContainerRecord): Array<{ slot: number; item: Con
 }
 
 function renderDragPreviewContent(dragPreview: DragPreviewState): JSX.Element {
-  // テクスチャが解決済みなら画像をプレビューする
+  // テクスチャが解決済みなら背景画像でプレビューする（img だとネイティブ DnD と競合しうる）
   if (dragPreview.textureUrl) {
-    return <img src={dragPreview.textureUrl} alt="" className="mc-drag-preview-icon" />
+    return (
+      <span
+        className="mc-drag-preview-icon"
+        style={{ backgroundImage: `url("${dragPreview.textureUrl}")` }}
+        aria-hidden="true"
+      />
+    )
   }
   return <span className="mc-drag-preview-fallback">{dragPreview.label}</span>
 }
@@ -52,6 +58,11 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
   const [dragOverSlot, setDragOverSlot] = useState<number | null>(null)
   const [draggingSlot, setDraggingSlot] = useState<number | null>(null)
   const [dragPreview, setDragPreview] = useState<DragPreviewState | null>(null)
+
+  useEffect(() => {
+    // 初回 DnD 前にネイティブドラッグ画像ホストを DOM へ用意する
+    prepareNativeDragImageHost()
+  }, [])
 
   useEffect(() => {
     // ドラッグ中でなければカーソル追従リスナーを登録しない

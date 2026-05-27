@@ -56,6 +56,11 @@ export function ChestSlot({
     window.worldChest.resolveTexture(itemId).then((url) => {
       // アンマウント後の setState を防ぐ
       if (active) {
+        // 解決失敗時はフォールバック表示へ切り替える
+        if (url === null) {
+          setTextureUrl(null)
+          return
+        }
         setTextureUrl(url)
       }
     })
@@ -80,12 +85,10 @@ export function ChestSlot({
   // テクスチャが解決済みならアイコン画像を表示する
   if (hasItem && textureUrl && itemId !== undefined) {
     itemIcon = (
-      <img
-        src={textureUrl}
-        alt={itemId}
+      <span
         className="mc-item-icon"
-        draggable={false}
-        onError={() => setTextureUrl(null)}
+        style={{ backgroundImage: `url("${textureUrl}")` }}
+        aria-hidden="true"
       />
     )
   }
@@ -102,9 +105,18 @@ export function ChestSlot({
     countLabel = <span className="mc-item-count">{count}</span>
   }
 
+  function handleSlotKeyDown(event: React.KeyboardEvent<HTMLDivElement>): void {
+    // ボタン相当のキーボード操作を提供する
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      onClick()
+    }
+  }
+
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       draggable={hasItem}
       className={cn(
         'mc-slot',
@@ -113,6 +125,7 @@ export function ChestSlot({
         dragOver && 'mc-slot--drag-over'
       )}
       onClick={onClick}
+      onKeyDown={handleSlotKeyDown}
       title={slotTitle}
       onDragStart={(event) => {
         // アイテムがないスロットはドラッグ開始を拒否する
@@ -120,9 +133,10 @@ export function ChestSlot({
           event.preventDefault()
           return
         }
+        event.stopPropagation()
+        event.dataTransfer.clearData()
         event.dataTransfer.setData(DRAG_MIME, String(slot))
         event.dataTransfer.effectAllowed = 'move'
-        // ブラウザ標準のドラッグ画像を非表示にする
         hideNativeDragImage(event)
         onDragStart({
           x: event.clientX,
@@ -155,6 +169,6 @@ export function ChestSlot({
       {itemIcon}
       {itemFallback}
       {countLabel}
-    </button>
+    </div>
   )
 }

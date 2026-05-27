@@ -82,11 +82,19 @@
   margin: 0;
   padding: 0;
   cursor: pointer;
+  user-select: none;
+  -webkit-user-drag: element;
   background-color: var(--mc-slot-bg);
   border: none;
   box-shadow:
     inset 3px 3px 0 var(--mc-border-mid),
     inset -3px -3px 0 var(--mc-border-light);
+}
+
+.mc-slot .mc-item-icon,
+.mc-slot .mc-item-fallback,
+.mc-slot .mc-item-count {
+  -webkit-user-drag: none;
 }
 
 .mc-slot:hover {
@@ -141,6 +149,9 @@
   display: block;
   width: 32px;
   height: 32px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
   image-rendering: pixelated;
 }
 
@@ -175,6 +186,9 @@
   left: calc(var(--mc-slot-size) * 0.11);
   width: calc(var(--mc-slot-size) * 0.78);
   height: calc(var(--mc-slot-size) * 0.78);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: contain;
   image-rendering: pixelated;
   pointer-events: none;
 }
