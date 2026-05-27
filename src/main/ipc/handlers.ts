@@ -167,6 +167,10 @@ export function registerIpcHandlers(): void {
     return session.getSaveStatus()
   })
 
+  registerLoggedIpcHandler('world:discard-unsaved-changes', async () => {
+    return session.discardUnsavedChanges()
+  })
+
   registerLoggedIpcHandler('assets:resolve-texture', async (_event, itemId: unknown) => {
     // 空文字や非文字列のアイテム ID は拒否する
     if (typeof itemId !== 'string' || itemId === '') {

@@ -735,6 +735,26 @@ export class AppSession {
   }
 
   /**
+   * メモリ上の未保存変更とスキャンセッションを破棄する。
+   *
+   * @returns 破棄後の保存 UI 向けステータス
+   */
+  discardUnsavedChanges(): Promise<SaveStatus> {
+    return this.runExclusive(async () => {
+      const pendingRegionCount = this.dirtyRegions.size
+      // 破棄対象がなければ現状のステータスだけ返す
+      if (pendingRegionCount === 0 && this.session === null) {
+        return this.getSaveStatus()
+      }
+      logger.info('session', '未保存変更を破棄', { pendingRegionCount })
+      this.session = null
+      this.dirtyRegions.clear()
+      this.dirtyChunkKeys.clear()
+      return this.getSaveStatus()
+    })
+  }
+
+  /**
    * 現在ロード中のワールドパスを返す。
    *
    * @returns ワールドパス。未スキャン時は null

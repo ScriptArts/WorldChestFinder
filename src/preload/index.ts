@@ -43,6 +43,7 @@ const api: WorldChestAPI = {
   moveSlot: (move) => ipcRenderer.invoke('world:move-slot', move),
   saveChanges: () => ipcRenderer.invoke('world:save'),
   getSaveStatus: () => ipcRenderer.invoke('world:get-save-status'),
+  discardUnsavedChanges: () => ipcRenderer.invoke('world:discard-unsaved-changes'),
   resolveTexture: (itemId) => ipcRenderer.invoke('assets:resolve-texture', itemId)
 }
 

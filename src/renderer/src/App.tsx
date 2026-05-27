@@ -57,6 +57,7 @@ export default function App(): JSX.Element {
   const [isMovingSlot, setIsMovingSlot] = useState(false)
   const [saveNotice, setSaveNotice] = useState<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
+  const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const [scanErrorDialogOpen, setScanErrorDialogOpen] = useState(false)
   const [scanErrors, setScanErrors] = useState<string[]>([])
 
@@ -166,6 +167,12 @@ export default function App(): JSX.Element {
     setContainers([])
   }
 
+  function resetLoadedWorldPreview(): void {
+    setWorldPath(null)
+    setScanResult(null)
+    setContainers([])
+  }
+
   function isSelectedContainer(containerId: string): boolean {
     // 非同期操作開始時と同じコンテナが選択されている場合だけ true を返す
     if (selectedContainerIdRef.current === containerId) {
@@ -190,19 +197,40 @@ export default function App(): JSX.Element {
     return () => window.clearTimeout(timer)
   }, [saveNotice])
 
-  async function handleSelectWorld(): Promise<void> {
-    // 未保存変更がある場合はワールド切替を拒否する
-    if (saveStatus.pendingRegionCount > 0) {
-      const message = '未保存の変更があります。保存してから別のワールドを選択してください'
-      showSaveNotice('info', message)
-      return
-    }
+  async function openWorldSelector(): Promise<void> {
     // ファイルダイアログでワールドパスを選択する
     const path = await window.worldChest.selectWorld()
     // パスが選ばれたらプレビュー状態を初期化する
     if (path) {
       clearWorldPreview(path)
       setStatusMessage(`Selected: ${path}`)
+    }
+  }
+
+  async function handleSelectWorld(): Promise<void> {
+    // 未保存変更がある場合は破棄確認ダイアログを表示する
+    if (saveStatus.pendingRegionCount > 0) {
+      setDiscardConfirmOpen(true)
+      return
+    }
+    await openWorldSelector()
+  }
+
+  function handleCancelDiscardConfirm(): void {
+    setDiscardConfirmOpen(false)
+  }
+
+  async function handleConfirmDiscardAndSelectWorld(): Promise<void> {
+    setDiscardConfirmOpen(false)
+    try {
+      // メモリ上の未保存変更を破棄してからワールド選択へ進む
+      const status = await window.worldChest.discardUnsavedChanges()
+      setSaveStatus(status)
+      resetLoadedWorldPreview()
+      await openWorldSelector()
+    } catch (error) {
+      const message = `未保存変更の破棄に失敗しました: ${formatError(error)}`
+      showSaveNotice('error', message)
     }
   }
 
@@ -498,6 +526,18 @@ export default function App(): JSX.Element {
           void handleConfirmSave()
         }}
         onCancel={handleCancelSaveConfirm}
+      />
+
+      <ConfirmDialog
+        open={discardConfirmOpen}
+        title="未保存の変更を破棄しますか？"
+        description={'未保存の変更があります。\n破棄して別のワールドを選択してもよろしいですか？'}
+        confirmLabel="破棄して選択"
+        cancelLabel="キャンセル"
+        onConfirm={() => {
+          void handleConfirmDiscardAndSelectWorld()
+        }}
+        onCancel={handleCancelDiscardConfirm}
       />
 
       <ScanErrorDialog

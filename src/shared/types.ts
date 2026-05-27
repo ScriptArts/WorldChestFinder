@@ -173,6 +173,7 @@ export interface WorldChestAPI {
   moveSlot(move: SlotMove): Promise<ContainerRecord | null>
   saveChanges(): Promise<SaveReport>
   getSaveStatus(): Promise<SaveStatus>
+  discardUnsavedChanges(): Promise<SaveStatus>
   resolveTexture(itemId: string): Promise<string | null>
 }
 
