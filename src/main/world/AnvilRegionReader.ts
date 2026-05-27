@@ -72,6 +72,12 @@ export async function readRegion(filePath: string): Promise<LoadedRegion> {
   let skippedChunks = 0
   const readErrors: string[] = []
 
+  // ヘッダー未満のファイルはチャンクリージョンとして読めない
+  if (buffer.length < HEADER_SIZE) {
+    readErrors.push(`${filePath}: リージョンファイルが小さすぎます (${buffer.length} bytes)`)
+    return { filePath, buffer, chunks, readErrors }
+  }
+
   // リージョンヘッダーの 1024 スロットを走査する
   for (let index = 0; index < 1024; index += 1) {
     const offset = index * 4
@@ -83,18 +89,17 @@ export async function readRegion(filePath: string): Promise<LoadedRegion> {
 
     const sectorOffset = (location >> 8) * SECTOR_SIZE
     const sectorCount = location & 0xff
+    const localX = index & 31
+    const localZ = (index >> 5) & 31
     // 不正なセクタ情報のチャンクはスキップする
     if (sectorOffset <= 0 || sectorCount <= 0) {
       continue
     }
 
-    const length = buffer.readUInt32BE(sectorOffset)
-    const compression = buffer.readUInt8(sectorOffset + 4)
-    const compressed = buffer.subarray(sectorOffset + 5, sectorOffset + 4 + length)
-
-    const localX = index & 31
-    const localZ = (index >> 5) & 31
     try {
+      const length = buffer.readUInt32BE(sectorOffset)
+      const compression = buffer.readUInt8(sectorOffset + 4)
+      const compressed = buffer.subarray(sectorOffset + 5, sectorOffset + 4 + length)
       const decompressed = await decompressChunk(compressed, compression)
       const parsed = await nbt.parse(decompressed, 'big')
       chunks.set(chunkKey(localX, localZ), {

@@ -4,6 +4,7 @@ import type { SearchFilter } from '../../shared/types'
 import { coalesce, formatError } from '../../shared/valueUtils'
 import { ChestGrid } from './components/ChestGrid'
 import { ConfirmDialog } from './components/ConfirmDialog'
+import { ScanErrorDialog } from './components/ScanErrorDialog'
 import { ContainerList } from './components/ContainerList'
 import { OperationProgressBar } from './components/OperationProgressBar'
 import { SearchBar } from './components/SearchBar'
@@ -56,6 +57,8 @@ export default function App(): JSX.Element {
   const [isMovingSlot, setIsMovingSlot] = useState(false)
   const [saveNotice, setSaveNotice] = useState<{ kind: 'success' | 'error' | 'info'; message: string } | null>(null)
   const [saveConfirmOpen, setSaveConfirmOpen] = useState(false)
+  const [scanErrorDialogOpen, setScanErrorDialogOpen] = useState(false)
+  const [scanErrors, setScanErrors] = useState<string[]>([])
 
   const {
     worldPath,
@@ -244,6 +247,14 @@ export default function App(): JSX.Element {
       // スキャン完了後に保存状態を同期する
       await refreshSaveStatus()
       setStatusMessage(`スキャン完了: ${result.containers.length} コンテナ (${result.errors.length} エラー)`)
+      // 読み込み失敗があれば完了後に詳細ダイアログを表示する
+      if (result.errors.length > 0) {
+        setScanErrors(result.errors)
+        setScanErrorDialogOpen(true)
+      } else {
+        setScanErrors([])
+        setScanErrorDialogOpen(false)
+      }
     } catch (error) {
       const message = `スキャンに失敗しました: ${formatError(error)}`
       showSaveNotice('error', message)
@@ -252,6 +263,10 @@ export default function App(): JSX.Element {
       setIsScanning(false)
       setProgress(null)
     }
+  }
+
+  function handleCloseScanErrorDialog(): void {
+    setScanErrorDialogOpen(false)
   }
 
   async function handleSave(): Promise<void> {
@@ -483,6 +498,12 @@ export default function App(): JSX.Element {
           void handleConfirmSave()
         }}
         onCancel={handleCancelSaveConfirm}
+      />
+
+      <ScanErrorDialog
+        open={scanErrorDialogOpen}
+        errors={scanErrors}
+        onClose={handleCloseScanErrorDialog}
       />
 
       <main className="relative grid min-h-0 gap-3 overflow-hidden p-3 lg:grid-cols-[420px_1fr]">

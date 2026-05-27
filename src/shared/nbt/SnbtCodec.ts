@@ -242,11 +242,30 @@ function stringifyListTag(tag: NbtTag, indentLevel: number): string {
   return `[${rendered.join(',')}]`
 }
 
+function compoundFromListEntry(entry: unknown): NbtCompound | null {
+  // NBT compound タグ形式なら value を取り出す
+  if (typeof entry === 'object' && entry !== null && 'type' in entry) {
+    const tag = entry as NbtTag
+    if (tag.type === 'compound' && typeof tag.value === 'object' && tag.value !== null) {
+      return tag.value as NbtCompound
+    }
+  }
+  // prismarine-nbt の list 要素は plain compound の場合がある
+  if (typeof entry === 'object' && entry !== null && !Array.isArray(entry) && !('type' in entry)) {
+    return entry as NbtCompound
+  }
+  return null
+}
+
 function stringifyListEntry(entry: unknown, itemType: string, indentLevel: number): string {
   // compound list 要素は compound タグとして整形する
   if (itemType === 'compound') {
-    const compoundEntry = entry as { type: 'compound'; value: NbtCompound }
-    return stringifyTagValue({ type: 'compound', value: compoundEntry.value }, indentLevel)
+    const compound = compoundFromListEntry(entry)
+    // 変換できない要素は空 compound として出力する
+    if (compound === null) {
+      return '{}'
+    }
+    return stringifyTagValue({ type: 'compound', value: compound }, indentLevel)
   }
   // 数値 list 要素は要素型に応じた SNBT 数値を出力する
   if (itemType === 'byte') {

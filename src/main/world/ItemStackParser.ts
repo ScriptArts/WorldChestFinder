@@ -67,6 +67,15 @@ function summarizeDisplay(compound: NbtCompound): string {
   return ''
 }
 
+function buildItemRawSnbt(compound: NbtCompound, slot: number, itemId: string, count: number): string {
+  try {
+    return compoundToSnbt(compound, { pretty: true })
+  } catch {
+    // SNBT 変換に失敗した場合は最低限のフィールドだけ返しスキャンを継続する
+    return buildItemSnbt(slot, itemId, count)
+  }
+}
+
 /**
  * NBT compound 1 件から UI 表示用 ItemStackView を生成する。
  *
@@ -86,7 +95,7 @@ export function parseItemStack(compound: NbtCompound, fallbackSlot: number): Ite
     itemId,
     count,
     displaySummary: summarizeDisplay(compound),
-    raw: compoundToSnbt(compound, { pretty: true })
+    raw: buildItemRawSnbt(compound, slot, itemId, count)
   }
 }
 

@@ -1,4 +1,4 @@
-import { readdir } from 'fs/promises'
+import { readdir, stat } from 'fs/promises'
 import path from 'path'
 import type { ContainerRecord, ScanProgress, ScanResult } from '../../shared/types'
 import { formatError, invokeOptional } from '../../shared/valueUtils'
@@ -43,11 +43,20 @@ async function findMcaFiles(root: string): Promise<string[]> {
       const fullPath = path.join(current, entry.name)
       // サブディレクトリは再帰的に走査する
       if (entry.isDirectory()) {
+        // POI リージョンはチェスト検索対象外のため走査しない
+        if (entry.name === 'poi') {
+          continue
+        }
         await walk(fullPath)
         continue
       }
       // .mca ファイルを結果一覧へ追加する
       if (entry.isFile() && entry.name.endsWith('.mca')) {
+        const fileStat = await stat(fullPath)
+        // 空ファイルは Anvil ヘッダーを読めないためスキップする
+        if (fileStat.size === 0) {
+          continue
+        }
         results.push(fullPath)
       }
     }
