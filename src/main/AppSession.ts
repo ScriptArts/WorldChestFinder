@@ -579,15 +579,20 @@ export class AppSession {
     const fromItem = fromItems.find((i) => i.slot === localFrom) || null
     const toItem = toItems.find((i) => i.slot === localTo) || null
 
-    // 移動元にアイテムがある場合は移動先 owner へ移す
+    // 両側の対象スロットをいったん空にする
+    // （先に書き込むと、後段の削除が書き込んだアイテムを消してしまうため）
     if (fromItem) {
       transferSlotItem(fromOwner, localFrom, null, worldFormat)
+    }
+    if (toItem) {
+      transferSlotItem(toOwner, localTo, null, worldFormat)
+    }
+    // 空にした両スロットへ入れ替えたアイテムを書き戻す
+    if (fromItem) {
       const movedItem = { ...fromItem, slot: localTo, raw: replaceSlotInSnbt(fromItem.raw, localTo) }
       transferSlotItem(toOwner, localTo, movedItem, worldFormat)
     }
-    // 移動先にアイテムがある場合は元スロットへ戻して入れ替える
     if (toItem) {
-      transferSlotItem(toOwner, localTo, null, worldFormat)
       const movedBack = { ...toItem, slot: localFrom, raw: replaceSlotInSnbt(toItem.raw, localFrom) }
       transferSlotItem(fromOwner, localFrom, movedBack, worldFormat)
     }
