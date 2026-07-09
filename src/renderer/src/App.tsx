@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FolderOpen, Save, Search } from 'lucide-react'
 import type { SearchFilter } from '../../shared/types'
+import { isSearchFilterActive } from '../../shared/search/SearchIndex'
 import { buildWorldMetadata, createWorldFormat } from '../../shared/world/WorldFormat'
 import { coalesce, formatError } from '../../shared/valueUtils'
 import { ChestGrid } from './components/ChestGrid'
@@ -61,6 +62,11 @@ export default function App(): JSX.Element {
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false)
   const [scanErrorDialogOpen, setScanErrorDialogOpen] = useState(false)
   const [scanErrors, setScanErrors] = useState<string[]>([])
+  const [containerSummary, setContainerSummary] = useState<{
+    displayed: number
+    total: number
+    filterActive: boolean
+  } | null>(null)
 
   const {
     worldPath,
@@ -172,12 +178,14 @@ export default function App(): JSX.Element {
       errors: []
     })
     setContainers([])
+    setContainerSummary(null)
   }
 
   function resetLoadedWorldPreview(): void {
     setWorldPath(null)
     setScanResult(null)
     setContainers([])
+    setContainerSummary(null)
   }
 
   function isSelectedContainer(containerId: string): boolean {
@@ -241,11 +249,35 @@ export default function App(): JSX.Element {
     }
   }
 
-  async function handleSearch(nextFilter: SearchFilter): Promise<void> {
+  async function applySearchFilter(nextFilter: SearchFilter): Promise<void> {
     setFilter(nextFilter)
-    // フィルタ条件に一致するコンテナ一覧を取得する
-    const nextContainers = await window.worldChest.getContainers(nextFilter)
-    setContainers(nextContainers)
+    const filterActive = isSearchFilterActive(nextFilter)
+    const allContainersPromise = window.worldChest.getContainers({})
+    // 検索条件ありの場合は一致一覧も並行取得する
+    if (filterActive) {
+      const matchedContainersPromise = window.worldChest.getContainers(nextFilter)
+      const matchedContainers = await matchedContainersPromise
+      const allContainers = await allContainersPromise
+      setContainers(matchedContainers)
+      setContainerSummary({
+        displayed: matchedContainers.length,
+        total: allContainers.length,
+        filterActive: true
+      })
+      return
+    }
+
+    const allContainers = await allContainersPromise
+    setContainers(allContainers)
+    setContainerSummary({
+      displayed: allContainers.length,
+      total: allContainers.length,
+      filterActive: false
+    })
+  }
+
+  async function handleSearch(nextFilter: SearchFilter): Promise<void> {
+    await applySearchFilter(nextFilter)
   }
 
   async function handleScan(): Promise<void> {
@@ -277,8 +309,7 @@ export default function App(): JSX.Element {
       setScanResult(result)
       const nextStatus = await window.worldChest.getAssetsStatus()
       setAssetsStatus(nextStatus)
-      const nextContainers = await window.worldChest.getContainers(filter)
-      setContainers(nextContainers)
+      await applySearchFilter(filter)
       // スキャン完了後に保存状態を同期する
       await refreshSaveStatus()
       setStatusMessage(`スキャン完了: ${result.containers.length} コンテナ (${result.errors.length} エラー) / MC ${createWorldFormat(result.worldMetadata).versionLabel}`)
@@ -585,6 +616,7 @@ export default function App(): JSX.Element {
           <ContainerList
             containers={containers}
             selectedId={selectedContainerId}
+            containerSummary={containerSummary}
             onSelect={selectContainer}
             disabled={isBusy}
           />

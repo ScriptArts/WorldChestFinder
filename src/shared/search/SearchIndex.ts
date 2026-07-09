@@ -170,3 +170,32 @@ export function filterContainers(containers: ContainerRecord[], filter?: SearchF
   // 条件に一致するコンテナだけを残す
   return containers.filter((container) => containerMatchesFilter(container, filter))
 }
+
+/**
+ * 検索条件が 1 つでも指定されているか判定する。
+ *
+ * @param filter - 検索条件
+ */
+export function isSearchFilterActive(filter: SearchFilter): boolean {
+  // NBT 条件が指定されていれば検索中
+  if (normalizeTerm(filter.nbt).length > 0) {
+    return true
+  }
+  // ディメンション条件が指定されていれば検索中
+  if (filter.dimension !== undefined && filter.dimension.trim() !== '') {
+    return true
+  }
+  // ソース種別条件が指定されていれば検索中
+  if (filter.sourceType !== undefined) {
+    return true
+  }
+  // 座標条件が指定されていれば検索中
+  if (hasPosFilter(filter)) {
+    return true
+  }
+  // 最小個数条件が指定されていれば検索中
+  if (filter.minCount !== undefined) {
+    return true
+  }
+  return false
+}
