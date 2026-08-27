@@ -35,6 +35,55 @@ function waitForProgressVisibility(startedAt: number): Promise<void> {
   })
 }
 
+/** ステータスバーに出すワールドパスの最大文字数 */
+const STATUS_BAR_PATH_MAX_LENGTH = 44
+
+/**
+ * ステータスバー表示用にワールドパスを短縮する。
+ *
+ * @remarks
+ * どのワールドを開いているかは末尾のフォルダ名で判断するため、
+ * 末尾を優先して残し、あふれる先頭側を `…` で省略する。
+ *
+ * @param path - 表示対象のパス
+ * @returns 上限に収まるよう先頭を省略したパス
+ */
+function formatStatusBarPath(path: string): string {
+  // 上限に収まるならそのまま表示する
+  if (path.length <= STATUS_BAR_PATH_MAX_LENGTH) {
+    return path
+  }
+
+  const segments = path.split(/[/\\]/).filter((segment) => segment !== '')
+  // 区切りが無いパスは末尾側だけを切り出す
+  if (segments.length === 0) {
+    return `…${path.slice(-STATUS_BAR_PATH_MAX_LENGTH)}`
+  }
+
+  let separator = '/'
+  // Windows のパスは区切り文字を元のまま保つ
+  if (path.includes('\\')) {
+    separator = '\\'
+  }
+
+  // 最低でも末尾フォルダ名は残す
+  let shortened = `…${separator}${segments[segments.length - 1]}`
+  // 末尾から順に親フォルダを足し、上限を超える手前で打ち切る
+  for (let index = segments.length - 2; index >= 0; index -= 1) {
+    const candidate = `…${separator}${segments.slice(index).join(separator)}`
+    // 上限を超えたら 1 つ前の候補を採用する
+    if (candidate.length > STATUS_BAR_PATH_MAX_LENGTH) {
+      break
+    }
+    shortened = candidate
+  }
+  return shortened
+}
+
+/** 通知帯の共通クラス（左端 2px の色帯 + 1 行分の高さ） */
+const SAVE_NOTICE_BASE_CLASS =
+  'flex shrink-0 items-center border-b border-l-2 border-b-border px-3 py-1.5 text-[12px] leading-snug'
+
 /**
  * 保存結果バナーの Tailwind クラスを種別に応じて返す。
  *
@@ -43,13 +92,13 @@ function waitForProgressVisibility(startedAt: number): Promise<void> {
 function getSaveNoticeClassName(kind: 'success' | 'error' | 'info'): string {
   // 成功通知用のスタイルを返す
   if (kind === 'success') {
-    return 'border-b border-green-500/40 bg-green-500/15 px-4 py-3 text-sm font-medium text-green-950 dark:text-green-100'
+    return `${SAVE_NOTICE_BASE_CLASS} border-l-success bg-success/10 text-success`
   }
   // エラー通知用のスタイルを返す
   if (kind === 'error') {
-    return 'border-b border-destructive/40 bg-destructive/15 px-4 py-3 text-sm font-medium text-destructive'
+    return `${SAVE_NOTICE_BASE_CLASS} border-l-destructive bg-destructive/10 text-destructive`
   }
-  return 'border-b border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium'
+  return `${SAVE_NOTICE_BASE_CLASS} border-l-primary bg-primary/10 text-foreground`
 }
 
 /** メインソフトウェア（ワールド選択・スキャン・編集・保存） */
@@ -79,6 +128,7 @@ export default function App(): JSX.Element {
     selectedContainerId,
     selectedSlot,
     filter,
+    statusMessage,
     setWorldPath,
     setAssetsStatus,
     setAssetProgress,
@@ -430,10 +480,18 @@ export default function App(): JSX.Element {
   const canScan = worldPath !== null && assetsReady && !isBusy && saveStatus.pendingRegionCount === 0
   let canSave = !isBusy && saveStatus.worldLoaded && saveStatus.pendingRegionCount > 0 && worldWritable
 
+  /*
+   * ツールバー上で強調されるボタンは常に 1 つだけにする。
+   * 未保存の変更があるときは「保存」、それ以外で走査可能なときは「スキャン」を主操作とする。
+   */
+  let scanButtonVariant: 'default' | 'secondary' = 'secondary'
   let saveButtonVariant: 'default' | 'outline' = 'outline'
-  // 保存中はボタンを強調表示する
-  if (isSaving) {
+  // 未保存の変更があるときは保存を主操作にする
+  if (saveStatus.pendingRegionCount > 0) {
     saveButtonVariant = 'default'
+  // 走査可能なときはスキャンを主操作にする
+  } else if (canScan) {
+    scanButtonVariant = 'default'
   }
 
   let saveButtonLabel = '保存'
@@ -448,6 +506,12 @@ export default function App(): JSX.Element {
     worldPathLabel = worldPath
   }
 
+  let worldNameLabel = ''
+  // ワールドパスからフォルダ名だけを取り出してツールバーへ表示する
+  if (worldPath !== null) {
+    worldNameLabel = worldPath.split(/[/\\]/).filter((segment) => segment !== '').pop() || worldPath
+  }
+
   let vanillaVersionLabel = 'cached'
   // バニラバージョンが取得できていれば表示名を差し替える
   if (assetsStatus !== null && assetsStatus.vanillaVersion !== null) {
@@ -455,8 +519,26 @@ export default function App(): JSX.Element {
   }
 
   let worldVersionLabel = ''
-  if (worldFormat !== null) {
-    worldVersionLabel = `${worldFormat.versionLabel} (DV ${worldFormat.dataVersion})`
+  let worldDataVersionLabel = ''
+  /*
+   * ワールド選択直後は level.dat 未読込のプレビュー（DataVersion 0）が入っている。
+   * この状態のバージョンは「不明」であって「非対応」ではないため、スキャン済みのときだけ表示する。
+   */
+  if (worldFormat !== null && worldFormat.dataVersion > 0) {
+    worldVersionLabel = worldFormat.versionLabel
+    worldDataVersionLabel = String(worldFormat.dataVersion)
+  }
+
+  // 書き込み非対応のワールドはバージョン表示自体を警告色にする
+  let worldVersionToneClass = 'text-foreground'
+  if (!worldWritable) {
+    worldVersionToneClass = 'text-destructive'
+  }
+
+  let worldVersionTitle = 'このワールド形式は編集・保存に対応しています'
+  // 非対応形式のときはツールチップで理由を伝える
+  if (!worldWritable) {
+    worldVersionTitle = 'このワールド形式は編集・保存に対応していません'
   }
 
   async function moveSelectedSlot(fromSlot: number, toSlot: number): Promise<void> {
@@ -513,65 +595,57 @@ export default function App(): JSX.Element {
   }
 
   return (
-    <div className="grid h-screen min-h-0 grid-rows-[auto_auto_1fr] overflow-hidden bg-background">
-      <header className="flex flex-wrap items-center gap-2 border-b bg-card px-4 py-3">
+    <div className="grid h-screen min-h-0 grid-rows-[auto_auto_1fr_auto] overflow-hidden bg-background">
+      {/* ツールバー: 主要操作と編集対象のワールド名だけを置く */}
+      <header className="flex h-9 shrink-0 items-center gap-1 border-b border-border-strong bg-chrome px-1.5">
         <Button type="button" variant="secondary" onClick={handleSelectWorld} disabled={isBusy}>
           <FolderOpen />
           ワールド選択
         </Button>
-        <Button type="button" onClick={handleScan} disabled={!canScan}>
+        <Separator orientation="vertical" className="mx-1 h-4 bg-border-strong" />
+        <Button type="button" variant={scanButtonVariant} onClick={handleScan} disabled={!canScan}>
           <Search />
           スキャン
         </Button>
-        <Button
-          type="button"
-          variant={saveButtonVariant}
-          onClick={handleSave}
-          disabled={!canSave}
-        >
+        <Button type="button" variant={saveButtonVariant} onClick={handleSave} disabled={!canSave}>
           <Save />
           {saveButtonLabel}
         </Button>
 
-        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span
-            className="max-w-[420px] truncate"
-            title={worldPathLabel}
-          >
-            {worldPathLabel}
-          </span>
-          {worldVersionLabel !== '' && (
-            <Badge variant={worldWritable ? 'secondary' : 'destructive'} title={`DataVersion ${scanResult?.worldMetadata.dataVersion}`}>
-              World: {worldVersionLabel}
-            </Badge>
+        {saveStatus.pendingRegionCount > 0 && (
+          <Badge variant="selection" className="ml-1">
+            <span className="size-1.5 rounded-full bg-selection" aria-hidden />
+            未保存 {saveStatus.pendingRegionCount}
+          </Badge>
+        )}
+
+        <div className="ml-auto flex min-w-0 items-center gap-2 pr-1">
+          {worldNameLabel === '' && (
+            <span className="text-[12px] text-muted-foreground">ワールド未選択</span>
           )}
-          {assetsReady && (
-            <Badge variant="secondary">Vanilla: {vanillaVersionLabel}</Badge>
-          )}
-          {!assetsReady && (
-            <Badge variant="outline">Assets: 準備中</Badge>
-          )}
-          {assetsStatus !== null && assetsStatus.worldPackLoaded && (
-            <Badge variant="outline">World pack</Badge>
-          )}
-          {saveStatus.pendingRegionCount > 0 && (
-            <Badge variant="destructive">未保存 {saveStatus.pendingRegionCount} リージョン</Badge>
+          {worldNameLabel !== '' && (
+            <span className="truncate text-[12px] font-medium text-chrome-foreground" title={worldPathLabel}>
+              {worldNameLabel}
+            </span>
           )}
         </div>
       </header>
 
-      {saveNotice && (
-        <div className={getSaveNoticeClassName(saveNotice.kind)} role="status">
-          {saveNotice.message}
-        </div>
-      )}
+      {/* 通知帯と進捗帯。どちらも無ければ高さ 0 になる */}
+      <div className="shrink-0">
+        {saveNotice && (
+          <div className={getSaveNoticeClassName(saveNotice.kind)} role="status">
+            {saveNotice.message}
+          </div>
+        )}
 
-      {isScanning && loadProgress !== null && (
-        <OperationProgressBar title="ワールド読み込み中" progress={loadProgress} />
-      )}
-      {isSaving && saveProgress !== null && (
-        <OperationProgressBar title="ワールド保存中" progress={saveProgress} />
-      )}
+        {isScanning && loadProgress !== null && (
+          <OperationProgressBar title="ワールド読み込み" progress={loadProgress} />
+        )}
+        {isSaving && saveProgress !== null && (
+          <OperationProgressBar title="ワールド保存" progress={saveProgress} />
+        )}
+      </div>
 
       <ConfirmDialog
         open={saveConfirmOpen}
@@ -603,16 +677,22 @@ export default function App(): JSX.Element {
         onClose={handleCloseScanErrorDialog}
       />
 
-      <main className="relative grid min-h-0 gap-3 overflow-hidden p-3 lg:grid-cols-[420px_1fr]">
+      <main className="relative grid min-h-0 gap-2 overflow-hidden p-2 lg:grid-cols-[340px_1fr]">
         {isBusy && (
           <div
-            className="absolute inset-0 z-10 cursor-wait bg-background/50"
+            className="absolute inset-0 z-10 cursor-wait bg-background/55"
             aria-hidden
           />
         )}
-        <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-xl border bg-card p-3">
-          <SearchBar appliedFilter={filter} onSearch={handleSearch} disabled={isBusy} />
-          <Separator className="my-3" />
+
+        {/* 左: 検索条件とヒットしたコンテナの一覧 */}
+        <aside className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
+          <div className="micro shrink-0 border-b border-border bg-muted px-3 py-2 text-muted-foreground">
+            検索条件
+          </div>
+          <div className="shrink-0 p-2.5">
+            <SearchBar appliedFilter={filter} onSearch={handleSearch} disabled={isBusy} />
+          </div>
           <ContainerList
             containers={containers}
             selectedId={selectedContainerId}
@@ -620,10 +700,11 @@ export default function App(): JSX.Element {
             onSelect={selectContainer}
             disabled={isBusy}
           />
-        </section>
+        </aside>
 
-        <section className="flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden">
-          <div className="flex shrink-0 justify-center">
+        {/* 右: チェスト GUI と選択スロットの NBT エディタ */}
+        <section className="flex h-full min-h-0 w-full flex-col gap-2 overflow-hidden">
+          <div className="flex shrink-0 justify-center overflow-auto rounded-lg border border-border bg-muted px-3 py-4 shadow-[inset_0_1px_2px_rgb(0_0_0/0.06)]">
             <ChestGrid
               container={selectedContainer}
               selectedSlot={selectedSlot}
@@ -644,6 +725,43 @@ export default function App(): JSX.Element {
           </div>
         </section>
       </main>
+
+      {/* ステータスバー: 直近の状況と読み込み済みデータの素性を常時表示する */}
+      <footer className="flex h-6 shrink-0 items-center gap-2.5 border-t border-border-strong bg-chrome px-2.5 text-[11px] text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate" title={statusMessage}>
+          {statusMessage}
+        </span>
+
+        {worldVersionLabel !== '' && (
+          <span className={`mono-data shrink-0 ${worldVersionToneClass}`} title={worldVersionTitle}>
+            MC {worldVersionLabel}
+          </span>
+        )}
+        {worldDataVersionLabel !== '' && (
+          <span className="mono-data shrink-0" title="ワールドの DataVersion">
+            DV {worldDataVersionLabel}
+          </span>
+        )}
+        {assetsReady && (
+          <span className="mono-data shrink-0" title="テクスチャ解決に使用しているバニラ assets">
+            assets {vanillaVersionLabel}
+          </span>
+        )}
+        {!assetsReady && (
+          <span className="mono-data shrink-0 text-warning">assets 準備中</span>
+        )}
+        {assetsStatus !== null && assetsStatus.worldPackLoaded && (
+          <span className="mono-data shrink-0" title="ワールド同梱のリソースパックを読み込み済み">
+            world pack
+          </span>
+        )}
+
+        <Separator orientation="vertical" className="h-3 shrink-0 bg-border-strong" />
+        {/* パスは末尾のワールド名が要るので、あふれたときは先頭側を省略する */}
+        <span className="mono-data selectable shrink-0" title={worldPathLabel}>
+          {formatStatusBarPath(worldPathLabel)}
+        </span>
+      </footer>
     </div>
   )
 }

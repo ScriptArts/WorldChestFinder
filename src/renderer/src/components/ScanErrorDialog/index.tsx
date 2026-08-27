@@ -1,5 +1,4 @@
 import { Button } from '../ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { ScrollArea } from '../ui/scroll-area'
 
 /** スキャンエラーダイアログの表示内容 */
@@ -27,41 +26,44 @@ export function ScanErrorDialog({ open, errors, onClose }: ScanErrorDialogProps)
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/25 p-6"
       role="presentation"
       onClick={onClose}
     >
-      <Card
-        className="flex max-h-[min(80vh,640px)] w-full max-w-2xl flex-col shadow-lg"
+      <div
+        className="flex max-h-[min(80vh,640px)] w-full max-w-2xl flex-col overflow-hidden rounded-lg border border-border-strong bg-card shadow-[0_16px_48px_-12px_rgb(0_0_0/0.4)]"
         role="dialog"
         aria-modal="true"
         aria-labelledby="scan-error-dialog-title"
         aria-describedby="scan-error-dialog-description"
         onClick={(event) => event.stopPropagation()}
       >
-        <CardHeader className="shrink-0">
-          <CardTitle id="scan-error-dialog-title">読み込みエラー</CardTitle>
-          <CardDescription id="scan-error-dialog-description">{summary}</CardDescription>
-        </CardHeader>
-        <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-          <ScrollArea className="max-h-[min(50vh,420px)] rounded-md border bg-muted/20 p-3">
-            <ul className="space-y-2 font-mono text-xs leading-relaxed">
-              {errors.map((error, index) => {
-                return (
-                  <li key={`${index}-${error}`} className="break-all text-foreground">
-                    {error}
-                  </li>
-                )
-              })}
-            </ul>
-          </ScrollArea>
-          <div className="flex shrink-0 justify-end">
-            <Button type="button" onClick={onClose}>
-              閉じる
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+        <div className="shrink-0 border-l-2 border-l-destructive px-4 py-3.5">
+          <h2 id="scan-error-dialog-title" className="text-[14px] font-semibold leading-none text-destructive">
+            読み込みエラー
+          </h2>
+          <p id="scan-error-dialog-description" className="mt-2 text-[12px] leading-relaxed text-muted-foreground">
+            {summary}
+          </p>
+        </div>
+        {/* 失敗内容はログとして読むものなので等幅で並べる */}
+        <ScrollArea className="min-h-0 flex-1 border-y border-border bg-muted">
+          <ul className="mono-data selectable space-y-1.5 px-4 py-3 text-[11px] leading-relaxed">
+            {errors.map((error, index) => {
+              return (
+                <li key={`${index}-${error}`} className="break-all text-foreground">
+                  {error}
+                </li>
+              )
+            })}
+          </ul>
+        </ScrollArea>
+        <div className="flex shrink-0 justify-end bg-muted px-3 py-2.5">
+          <Button type="button" onClick={onClose}>
+            閉じる
+          </Button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -13,12 +13,13 @@ interface MarkEntry {
   style: string
 }
 
+/** ライト / ダークの両テーマへ追従させるため、色は CSS 変数から引く */
 const SNBT_COLORS = {
-  string: '#98c379',
-  number: '#d19a66',
-  key: '#e06c75',
-  arrayType: '#56b6c2',
-  punctuation: '#abb2bf'
+  string: 'var(--snbt-string)',
+  number: 'var(--snbt-number)',
+  key: 'var(--snbt-key)',
+  arrayType: 'var(--snbt-array-type)',
+  punctuation: 'var(--snbt-punctuation)'
 }
 
 /** 装飾種別ごとの優先度（大きいほど優先） */
@@ -289,7 +290,7 @@ export const snbtHighlightPlugin = ViewPlugin.fromClass(
   }
 )
 
-/** SNBT ハイライト用の色定義（oneDark 系） */
+/** SNBT ハイライト用の色定義（テーマ変数に追従） */
 export const snbtHighlightTheme = EditorView.theme({
   '.cm-snbt-string': {
     color: SNBT_COLORS.string

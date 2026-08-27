@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { ContainerRecord } from '../../../../shared/types'
 import { formatContainerPosition } from '../../../../shared/containerUtils'
-import { Card, CardContent } from '../ui/card'
 import { ChestSlot } from './ChestSlot'
 import { DRAG_PREVIEW_OFFSET, prepareNativeDragImageHost, type DragPreviewState } from './dragUtils'
 import { formatContainerTitle, getChestGridClass, getChestWindowClass } from './minecraftChestUtils'
@@ -96,9 +95,7 @@ export function ChestGrid({ container, selectedSlot, onSelectSlot, onMoveSlot, d
   // コンテナ未選択時は案内メッセージを表示する
   if (!container) {
     return (
-      <Card>
-        <CardContent className="mc-chest-empty">コンテナを選択してください</CardContent>
-      </Card>
+      <div className="mc-chest-empty">左の一覧からコンテナを選ぶと、中身がここに並びます</div>
     )
   }
 

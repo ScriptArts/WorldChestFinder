@@ -92,9 +92,9 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
   }
 
   return (
-    <form className="grid gap-3" onSubmit={handleSubmit}>
+    <form className="grid gap-2.5" onSubmit={handleSubmit}>
       <div className="grid grid-cols-2 gap-2">
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <Label>ディメンション</Label>
           <Select
             value={dimensionSelectValue(draftFilter.dimension)}
@@ -120,7 +120,7 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
           </Select>
         </div>
 
-        <div className="grid gap-2">
+        <div className="grid gap-1.5">
           <Label>コンテナタイプ</Label>
           <Select
             value={sourceTypeSelectValue(draftFilter.sourceType)}
@@ -146,17 +146,19 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
         </div>
       </div>
 
-      <div className="grid gap-2">
-        <Label>Pos</Label>
-        <div className="grid grid-cols-3 gap-2">
-          <div className="grid gap-1">
-            <Label htmlFor="search-pos-x" className="text-xs text-muted-foreground">
+      <div className="grid gap-1.5">
+        <Label>座標</Label>
+        {/* 軸名を入力欄の左に置いて 1 行に収める */}
+        <div className="grid grid-cols-3 gap-1.5">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="search-pos-x" className="mono-data w-2.5 shrink-0 text-center">
               X
             </Label>
             <Input
               id="search-pos-x"
               type="number"
-              placeholder="任意"
+              className="mono-data px-1.5"
+              placeholder="—"
               value={posInputValue(draftFilter.posX)}
               disabled={disabled}
               onChange={(event) => {
@@ -164,14 +166,15 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
               }}
             />
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor="search-pos-y" className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="search-pos-y" className="mono-data w-2.5 shrink-0 text-center">
               Y
             </Label>
             <Input
               id="search-pos-y"
               type="number"
-              placeholder="任意"
+              className="mono-data px-1.5"
+              placeholder="—"
               value={posInputValue(draftFilter.posY)}
               disabled={disabled}
               onChange={(event) => {
@@ -179,14 +182,15 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
               }}
             />
           </div>
-          <div className="grid gap-1">
-            <Label htmlFor="search-pos-z" className="text-xs text-muted-foreground">
+          <div className="flex items-center gap-1">
+            <Label htmlFor="search-pos-z" className="mono-data w-2.5 shrink-0 text-center">
               Z
             </Label>
             <Input
               id="search-pos-z"
               type="number"
-              placeholder="任意"
+              className="mono-data px-1.5"
+              placeholder="—"
               value={posInputValue(draftFilter.posZ)}
               disabled={disabled}
               onChange={(event) => {
@@ -197,13 +201,14 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
         </div>
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid grid-cols-[auto_1fr] items-center gap-2">
         <Label htmlFor="search-min-count">最小アイテム数</Label>
         <Input
           id="search-min-count"
           type="number"
           min={1}
-          placeholder="任意"
+          className="mono-data"
+          placeholder="指定なし"
           value={minCountInputValue(draftFilter.minCount)}
           disabled={disabled}
           onChange={(event) => {
@@ -223,18 +228,20 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
         />
       </div>
 
-      <div className="grid gap-2">
+      <div className="grid gap-1.5">
         <Label htmlFor="search-nbt">NBT（部分一致）</Label>
         <Input
           id="search-nbt"
           type="search"
+          className="mono-data"
+          placeholder="minecraft:diamond"
           value={coalesce(draftFilter.nbt, '')}
           disabled={disabled}
           onChange={(event) => setDraftFilter({ ...draftFilter, nbt: event.target.value })}
         />
       </div>
 
-      <Button type="submit" className="w-full" disabled={disabled}>
+      <Button type="submit" className="mt-0.5 w-full" disabled={disabled}>
         <Search />
         検索
       </Button>

@@ -1,5 +1,4 @@
 import CodeMirror from '@uiw/react-codemirror'
-import { oneDarkTheme } from '@codemirror/theme-one-dark'
 import { EditorView } from '@codemirror/view'
 import { snbtHighlightPlugin, snbtHighlightTheme } from '@renderer/lib/snbt/snbtHighlightPlugin'
 
@@ -16,38 +15,52 @@ const snbtEditorTheme = EditorView.theme({
   '&': {
     backgroundColor: 'transparent',
     color: 'var(--foreground)',
-    fontSize: '0.75rem'
+    fontSize: '12px'
   },
   '.cm-scroller': {
     backgroundColor: 'var(--card)',
-    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, monospace'
+    fontFamily: 'var(--font-data)',
+    lineHeight: '1.6'
   },
   '.cm-content': {
-    caretColor: 'var(--foreground)'
+    caretColor: 'var(--foreground)',
+    padding: '6px 0'
   },
   '.cm-gutters': {
-    backgroundColor: 'color-mix(in oklab, var(--card) 88%, black 12%)',
-    color: 'var(--muted-foreground)',
-    borderRight: '1px solid var(--border)'
+    backgroundColor: 'transparent',
+    color: 'color-mix(in oklab, var(--muted-foreground) 65%, transparent)',
+    border: 'none',
+    borderRight: '1px solid var(--border)',
+    paddingRight: '2px'
+  },
+  '.cm-lineNumbers .cm-gutterElement': {
+    padding: '0 6px 0 8px',
+    fontVariantNumeric: 'tabular-nums'
   },
   '.cm-activeLine': {
-    backgroundColor: 'color-mix(in oklab, var(--accent) 28%, transparent)'
+    backgroundColor: 'color-mix(in oklab, var(--selection) 8%, transparent)'
   },
   '.cm-activeLineGutter': {
-    backgroundColor: 'color-mix(in oklab, var(--accent) 22%, transparent)'
+    backgroundColor: 'transparent',
+    color: 'var(--foreground)'
   },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': {
-    backgroundColor: 'color-mix(in oklab, var(--primary) 26%, transparent) !important'
+    backgroundColor: 'color-mix(in oklab, var(--primary) 30%, transparent) !important'
+  },
+  '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
+    backgroundColor: 'color-mix(in oklab, var(--primary) 22%, transparent)',
+    outline: 'none'
   },
   '&.cm-focused': {
     outline: 'none'
   },
   '&.cm-focused .cm-cursor': {
-    borderLeftColor: 'var(--foreground)'
+    borderLeftColor: 'var(--foreground)',
+    borderLeftWidth: '2px'
   }
 })
 
-const snbtEditorExtensions = [snbtHighlightPlugin, snbtHighlightTheme, oneDarkTheme, snbtEditorTheme, EditorView.lineWrapping]
+const snbtEditorExtensions = [snbtHighlightPlugin, snbtHighlightTheme, snbtEditorTheme, EditorView.lineWrapping]
 
 const fillHeightEditorTheme = EditorView.theme({
   '&': {
@@ -91,7 +104,7 @@ export function JsonCodeEditor({
     isEditable = false
   }
 
-  let wrapperClassName = 'overflow-hidden rounded-md border border-input bg-transparent'
+  let wrapperClassName = 'overflow-hidden rounded-md border border-input bg-card focus-within:border-primary focus-within:ring-2 focus-within:ring-ring/25'
   let editorHeight = '220px'
   // 親の残り高さに合わせてエディタを伸ばす
   if (fillHeight) {

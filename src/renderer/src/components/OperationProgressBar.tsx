@@ -21,37 +21,45 @@ function progressCountLabel(progress: ProgressLike): string {
   if (progress.total <= 0) {
     return ''
   }
-  return ` (${progress.current}/${progress.total})`
+  return `${progress.current}/${progress.total}`
 }
 
-/** スキャン・保存中の操作進捗バー */
+/** スキャン・保存中の操作進捗バー（ツールバー直下の 1 行帯） */
 export function OperationProgressBar({ title, progress }: OperationProgressBarProps): JSX.Element {
   const percent = toPercent(progress.current, progress.total)
   const indeterminate = progress.total <= 0
+  const countLabel = progressCountLabel(progress)
 
   let progressBar: JSX.Element
-  // 総数不明時は不定進捗バーを表示する
+  // 総数不明時は左右に流れる不定進捗バーを表示する
   if (indeterminate) {
     progressBar = (
-      <div className="relative h-3 w-full overflow-hidden rounded-full bg-primary/20">
-        <div className="absolute inset-y-0 w-1/3 animate-pulse rounded-full bg-primary" />
+      <div className="relative h-1.5 w-full overflow-hidden rounded-sm bg-primary/15">
+        <div className="progress-indeterminate absolute inset-y-0 w-1/3 rounded-sm bg-primary" />
       </div>
     )
   // 総数が分かる場合は通常の進捗バーを表示する
   } else {
-    progressBar = <Progress value={percent} className="h-3" />
+    progressBar = <Progress value={percent} />
+  }
+
+  let percentLabel = ''
+  // 進捗率が計算できるときだけ右端へ％を出す
+  if (!indeterminate) {
+    percentLabel = `${percent}%`
   }
 
   return (
-    <div className="border-b-2 border-primary bg-primary/10 px-4 py-4 shadow-sm">
-      <div className="mb-3 flex items-center justify-between gap-3 text-sm">
-        <span className="text-base font-semibold">{title}</span>
-        <span className="font-medium text-foreground">
-          {progress.message}
-          {progressCountLabel(progress)}
-        </span>
-      </div>
-      {progressBar}
+    <div className="flex shrink-0 items-center gap-3 border-b border-border bg-chrome px-3 py-1.5">
+      <span className="micro shrink-0 text-primary">{title}</span>
+      <span className="min-w-0 flex-1 truncate text-[12px] text-foreground">{progress.message}</span>
+      {countLabel !== '' && (
+        <span className="mono-data shrink-0 text-[11px] text-muted-foreground">{countLabel}</span>
+      )}
+      <div className="w-32 shrink-0">{progressBar}</div>
+      {percentLabel !== '' && (
+        <span className="mono-data w-9 shrink-0 text-right text-[11px] text-muted-foreground">{percentLabel}</span>
+      )}
     </div>
   )
 }

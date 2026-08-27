@@ -6,7 +6,6 @@ import type { NbtCompound } from '../../../../shared/nbt/nbtTypes'
 import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
 import { readItemCount, type WorldFormat } from '../../../../shared/world/WorldFormat'
 import { Button } from '../ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { JsonCodeEditor } from '../ui/json-code-editor'
 import { Label } from '../ui/label'
 
@@ -113,11 +112,9 @@ export function SlotEditor({ container, slot, worldFormat, onUpdated, onError, d
   // コンテナまたはスロット未選択、またはワールド形式不明時は案内を表示する
   if (!container || slot === null || worldFormat === null) {
     return (
-      <Card>
-        <CardContent className="py-8 text-center text-sm text-muted-foreground">
-          スロットを選択してください
-        </CardContent>
-      </Card>
+      <div className="flex h-full min-h-0 w-full items-center justify-center rounded-lg border border-dashed border-border-strong bg-card/50 p-6 text-center text-[12px] text-muted-foreground">
+        チェストのスロットを選ぶと、ここで NBT を編集できます
+      </div>
     )
   }
 
@@ -192,33 +189,53 @@ export function SlotEditor({ container, slot, worldFormat, onUpdated, onError, d
 
   const editorDisabled = disabled || isApplying
 
+  const existingItem = container.items.find((entry) => entry.slot === slot)
+
+  let slotItemLabel = '空きスロット'
+  // アイテムが入っているスロットは ID と個数を見出しへ出す
+  if (existingItem !== undefined) {
+    slotItemLabel = `${existingItem.itemId} × ${existingItem.count}`
+  }
+
   return (
-    <Card className="flex h-full min-h-0 w-full flex-col">
-      <CardHeader className="shrink-0">
-        <CardTitle>Slot {slot}</CardTitle>
-        <CardDescription>
-          変更後は「適用」を押してから、ヘッダーの「保存」でワールドに書き込みます
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex min-h-0 flex-1 flex-col gap-4">
-        <div className="flex min-h-0 flex-1 flex-col gap-2">
-          <Label htmlFor="slot-nbt-snbt">NBT (SNBT)</Label>
-          <JsonCodeEditor
-            id="slot-nbt-snbt"
-            value={nbtSnbt}
-            disabled={editorDisabled}
-            fillHeight
-            onChange={(value) => {
-              // SNBT エディタの内容をそのまま編集状態へ反映する
-              setNbtSnbt(value)
-            }}
-          />
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <Button type="button" onClick={apply} disabled={editorDisabled}>適用</Button>
-          <Button type="button" variant="outline" onClick={() => applyItem(null)} disabled={editorDisabled}>クリア</Button>
-        </div>
-      </CardContent>
-    </Card>
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-border bg-card">
+      {/* 見出し: 編集対象のスロット番号と現在の中身 */}
+      <div className="flex shrink-0 items-baseline gap-2 border-b border-border bg-muted px-3 py-2">
+        <span className="micro text-muted-foreground">スロット</span>
+        <span className="mono-data text-[13px] font-semibold leading-none">{slot}</span>
+        <span className="mono-data ml-auto min-w-0 truncate text-[11px] text-muted-foreground" title={slotItemLabel}>
+          {slotItemLabel}
+        </span>
+      </div>
+
+      <div className="flex min-h-0 flex-1 flex-col p-2.5">
+        <Label htmlFor="slot-nbt-snbt" className="sr-only">
+          NBT (SNBT)
+        </Label>
+        <JsonCodeEditor
+          id="slot-nbt-snbt"
+          value={nbtSnbt}
+          disabled={editorDisabled}
+          fillHeight
+          onChange={(value) => {
+            // SNBT エディタの内容をそのまま編集状態へ反映する
+            setNbtSnbt(value)
+          }}
+        />
+      </div>
+
+      {/* 操作列: 適用してもまだディスクへは書かれないことを添える */}
+      <div className="flex shrink-0 items-center gap-2 border-t border-border bg-muted px-2.5 py-2">
+        <p className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground">
+          「適用」はメモリ上の変更です。ワールドへ書き込むにはツールバーの「保存」を押します
+        </p>
+        <Button type="button" variant="outline" onClick={() => applyItem(null)} disabled={editorDisabled}>
+          クリア
+        </Button>
+        <Button type="button" onClick={apply} disabled={editorDisabled}>
+          適用
+        </Button>
+      </div>
+    </div>
   )
 }
