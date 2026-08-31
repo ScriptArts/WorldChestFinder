@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { MinecraftIds } from '../../shared/minecraftIds'
-import { replaceSlotInSnbt } from '../../shared/nbt/SnbtCodec'
+import { replaceSlotInSnbt } from '../nbt/SnbtCodec'
 import type { ContainerRecord, ItemStackView, LargeChestHalf, LargeChestPairInfo } from '../../shared/types'
 
 const CHEST_IDS = new Set([MinecraftIds.BLOCK_CHEST, MinecraftIds.BLOCK_TRAPPED_CHEST])

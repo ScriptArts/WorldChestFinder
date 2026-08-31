@@ -223,7 +223,7 @@ export default function App(): JSX.Element {
     setWorldPath(path)
     setScanResult({
       worldPath: path,
-      worldMetadata: buildWorldMetadata(0, null, path.split(/[/\\]/).pop() || path),
+      worldMetadata: buildWorldMetadata(0, null, path.split(/[/\\]/).pop() || path, false),
       containers: [],
       errors: []
     })
@@ -476,6 +476,20 @@ export default function App(): JSX.Element {
 
   const worldWritable = scanResult !== null && scanResult.worldMetadata.supported
 
+  /** 検索フィルタのディメンション候補は、スキャン結果に実在する次元 ID から作る */
+  const dimensionOptions = useMemo(() => {
+    // スキャン前は候補を出さない
+    if (scanResult === null) {
+      return []
+    }
+    const found = new Set<string>()
+    // コンテナが属する次元 ID を重複なく集める
+    for (const container of scanResult.containers) {
+      found.add(container.dimension)
+    }
+    return [...found].sort()
+  }, [scanResult])
+
   const assetsReady = assetsStatus !== null && assetsStatus.ready
   const canScan = worldPath !== null && assetsReady && !isBusy && saveStatus.pendingRegionCount === 0
   let canSave = !isBusy && saveStatus.worldLoaded && saveStatus.pendingRegionCount > 0 && worldWritable
@@ -691,7 +705,7 @@ export default function App(): JSX.Element {
             検索条件
           </div>
           <div className="shrink-0 p-2.5">
-            <SearchBar appliedFilter={filter} onSearch={handleSearch} disabled={isBusy} />
+            <SearchBar appliedFilter={filter} dimensions={dimensionOptions} onSearch={handleSearch} disabled={isBusy} />
           </div>
           <ContainerList
             containers={containers}

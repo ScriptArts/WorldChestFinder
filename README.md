@@ -6,8 +6,9 @@ Minecraft Java Edition のワールド（Anvil 形式）から、チェストな
 
 ### 使えるワールド
 
-- **Minecraft Java Edition 1.18 以降** の Anvil ワールド（`region/` などの `.mca`）
-- チャンク NBT は **`Level` ラッパーなし**の現行形式
+- **Minecraft Java Edition 26.x** のワールド構成
+- 次元は **`dimensions/<名前空間>/<パス>/`** に並ぶ形式（標準の 3 次元も含む）
+- 各次元の **`region/`（ブロックエンティティ）** と **`entities/`（エンティティ）** を走査します（`poi/` は対象外）
 - ブロックエンティティ / アイテム ID は **`minecraft:` 付き**形式
 
 ### `level.dat` の読み取り
@@ -16,33 +17,25 @@ Minecraft Java Edition のワールド（Anvil 形式）から、チェストな
 
 | 用途 | 説明 |
 |------|------|
-| **編集可否の判定** | `DataVersion` が 2860（1.18）未満のワールドは編集・保存できません |
-| **画面での個数表示** | チェスト UI などに表示する個数を、どのフィールドから読むか決めます |
-| **空スロットの初期 SNBT** | 新規編集時に SlotEditor へ表示するテンプレートを生成します |
+| **編集可否の判定** | `dimensions/minecraft/overworld/` が無いワールド（旧構成）は編集・保存できません |
+| **画面での表示** | `Version.Name`（例: `26.2`）と `DataVersion` を画面上部に表示します |
 
-`Version.Name`（例: `1.21.11`）は画面上部のバージョン表示に使います。
-
-### アイテム個数（`Count` / `count`）
-
-バージョンによって、item NBT の個数フィールド名が異なります。
-
-- **1.20.4 以前**: `Count`（byte）が一般的
-- **1.20.5 以降**: `count`（int）が一般的
+### アイテム個数（`count`）
 
 本ソフトウェアは **SNBT を正本** として扱います。
 
 | 操作 | 挙動 |
 |------|------|
 | **スキャン** | ワールド上の NBT を SNBT として保持 |
-| **保存・ドラッグ&ドロップ・適用** | SNBT の内容をそのまま書き込む（`Count` / `count` の変換はしない） |
-| **画面表示** | `DataVersion` に応じて個数フィールドの優先順位を決める |
-| **空スロットの初期表示** | `DataVersion` に合わせた SNBT テンプレートを表示 |
+| **保存・ドラッグ&ドロップ・適用** | SNBT の内容をそのまま書き込む（フィールド名の変換はしない） |
+| **画面表示** | `count`（int）を読む（古い `Count` が残っている場合はそれで代用） |
+| **空スロットの初期表示** | `count`（int）を使った SNBT テンプレートを表示 |
 
-保存時に `DataVersion` からフィールド名を書き換えることはありません。SNBT で指定した内容がそのままワールドに保存されます。
+保存時にフィールド名を書き換えることはありません。SNBT で指定した内容がそのままワールドに保存されます。
 
 ### 非対応
 
-- 1.18 未満の旧 Anvil 形式（`Level` ラッパー、`TileEntities` 主体のチャンクなど）
+- 1.21 以前の旧ワールド構成（ワールド直下の `region/`、`DIM-1`、`DIM1`）
 - エンダーチェスト・プレイヤーインベントリ
 
 ### テクスチャについて
@@ -82,8 +75,33 @@ Minecraft Java Edition のワールド（Anvil 形式）から、チェストな
 - TypeScript
 - Electron + electron-vite
 - React 19
-- prismarine-nbt
+- [SpringNBTLibrary](https://github.com/ScriptArts/SpringNBTLibrary)（NBT / SNBT / Anvil リージョンの読み書き）
 - Vitest
+
+### NBT / ワールドの読み書き
+
+NBT・SNBT・Anvil リージョン（`.mca`）の解析と書き込みは、すべて
+**SpringNBTLibrary** に任せています（自前実装はしません）。
+
+| 処理 | 使うもの |
+|------|----------|
+| ワールドを開く・`level.dat`・次元の解決 | `MinecraftWorld` / `Dimension`（`spring-nbt-library/world`） |
+| `.mca` の読み書き | `RegionFile`（`spring-nbt-library/anvil`） |
+| SNBT の解析・整形 | `snbt.parseCompound` / `snbt.writePretty` |
+| NBT のタグ操作 | `NbtCompound` / `NbtList` などのタグ型 |
+
+ライブラリは npm レジストリに公開されていないため、リリース配布物の tarball を
+`vendor/spring-nbt-library-<版>.tgz` に置き、`package.json` から `file:` 参照しています。
+ESM 専用パッケージなので、`electron.vite.config.ts` で main / preload のバンドルへ取り込んでいます。
+
+ライブラリは Node.js 前提（`node:fs` などを使う）のため renderer からは読み込めません。
+SlotEditor の SNBT 解析（`world:parse-item-snbt`）と、空スロットの SNBT テンプレート生成
+（`world:build-empty-slot-snbt`）は IPC 経由で main プロセスへ委ねています。
+
+唯一の例外は SlotEditor のシンタックスハイライト
+（[snbtHighlightPlugin.ts](src/renderer/src/lib/snbt/snbtHighlightPlugin.ts)）です。
+これは CodeMirror の表示を色分けするだけの正規表現ベースの処理で、
+NBT の読み書きには一切関与しません（ライブラリはトークン列を公開していないため自前のままです）。
 
 ### セットアップ
 

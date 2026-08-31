@@ -1,10 +1,9 @@
-import { readdir, stat } from 'fs/promises'
 import path from 'path'
 import type { ContainerRecord, ScanProgress, ScanResult, WorldMetadata } from '../../shared/types'
 import { createWorldFormat, type WorldFormat } from '../../shared/world/WorldFormat'
 import { formatError, invokeOptional } from '../../shared/valueUtils'
 import { logger } from '../logging/AppLogger'
-import { readWorldMetadata } from './LevelDatReader'
+import { readWorldLayout } from './WorldLayout'
 import { readRegion, type ChunkData, type LoadedRegion } from './AnvilRegionReader'
 import { findItemsHits, hitsToContainers } from './ItemsLocator'
 import { mergeLargeChests } from './LargeChestMerger'
@@ -31,87 +30,17 @@ export interface ScanSession {
   errors: string[]
 }
 
-async function findMcaFiles(root: string): Promise<string[]> {
-  const results: string[] = []
-
-  async function walk(current: string): Promise<void> {
-    let entries
-    try {
-      entries = await readdir(current, { withFileTypes: true })
-    } catch {
-      return
-    }
-
-    // サブディレクトリと .mca ファイルを再帰的に収集する
-    for (const entry of entries) {
-      const fullPath = path.join(current, entry.name)
-      // サブディレクトリは再帰的に走査する
-      if (entry.isDirectory()) {
-        // POI リージョンはチェスト検索対象外のため走査しない
-        if (entry.name === 'poi') {
-          continue
-        }
-        await walk(fullPath)
-        continue
-      }
-      // .mca ファイルを結果一覧へ追加する
-      if (entry.isFile() && entry.name.endsWith('.mca')) {
-        const fileStat = await stat(fullPath)
-        // 空ファイルは Anvil ヘッダーを読めないためスキップする
-        if (fileStat.size === 0) {
-          continue
-        }
-        results.push(fullPath)
-      }
-    }
-  }
-
-  await walk(root)
-  return results.sort()
-}
-
-function inferDimension(worldPath: string, mcaPath: string): string {
-  const relative = path.relative(worldPath, mcaPath)
-  const parts = relative.split(path.sep)
-  // ネザーディメンションを判定する
-  if (parts[0] === 'DIM-1') {
-    return 'nether'
-  }
-  // エンドディメンションを判定する
-  if (parts[0] === 'DIM1') {
-    return 'end'
-  }
-  // カスタムディメンションを判定する
-  if (parts[0] === 'dimensions' && parts.length >= 2) {
-    return parts[1]
-  }
-  return 'overworld'
-}
-
-function parseRegionCoords(fileName: string): { regionX: number; regionZ: number } | null {
-  const match = fileName.match(/^r\.(-?\d+)\.(-?\d+)\.mca$/)
-  // ファイル名形式が一致しない場合は座標を復元できない
-  if (!match) {
-    return null
-  }
-  return { regionX: Number(match[1]), regionZ: Number(match[2]) }
-}
-
-function resolveChunkCoordinates(
-  chunk: ChunkData,
-  regionX: number,
-  regionZ: number
-): { chunkX: number; chunkZ: number } {
+function resolveChunkCoordinates(chunk: ChunkData): { chunkX: number; chunkZ: number } {
   let chunkX = getInt(chunk.nbt, 'xPos')
-  // xPos がないチャンクはリージョン座標とローカル座標から補完する
+  // xPos が無いチャンクはリージョンのロケーション表由来の絶対座標を使う
   if (chunkX === undefined) {
-    chunkX = regionX * 32 + chunk.localX
+    chunkX = chunk.chunkX
   }
 
   let chunkZ = getInt(chunk.nbt, 'zPos')
-  // zPos がないチャンクはリージョン座標とローカル座標から補完する
+  // zPos が無いチャンクはリージョンのロケーション表由来の絶対座標を使う
   if (chunkZ === undefined) {
-    chunkZ = regionZ * 32 + chunk.localZ
+    chunkZ = chunk.chunkZ
   }
 
   return { chunkX, chunkZ }
@@ -126,12 +55,13 @@ function resolveChunkCoordinates(
  */
 export async function scanWorld(worldPath: string, onProgress?: ProgressCallback): Promise<ScanSession> {
   const startedAt = Date.now()
-  const worldMetadata = await readWorldMetadata(worldPath)
+  const layout = await readWorldLayout(worldPath)
+  const worldMetadata = layout.metadata
   const worldFormat = createWorldFormat(worldMetadata)
-  const mcaFiles = await findMcaFiles(worldPath)
+  const regionEntries = layout.regionFiles
   logger.info('scan', 'リージョンファイル一覧を取得', {
     worldPath,
-    regionFileCount: mcaFiles.length,
+    regionFileCount: regionEntries.length,
     dataVersion: worldMetadata.dataVersion,
     versionName: worldMetadata.versionName
   })
@@ -147,41 +77,36 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
   invokeOptional(onProgress, {
     phase: 'scan-discovery',
     current: 0,
-    total: mcaFiles.length,
-    message: `Found ${mcaFiles.length} region files`
+    total: regionEntries.length,
+    message: `Found ${regionEntries.length} region files`
   })
 
   // 各リージョンファイルを走査して Items タグを持つコンテナを収集する
-  for (let index = 0; index < mcaFiles.length; index += 1) {
-    const mcaPath = mcaFiles[index]
+  for (let index = 0; index < regionEntries.length; index += 1) {
+    const entry = regionEntries[index]
+    const mcaPath = entry.filePath
     invokeOptional(onProgress, {
       phase: 'scan-region',
       current: index + 1,
-      total: mcaFiles.length,
+      total: regionEntries.length,
       message: `Scanning ${path.basename(mcaPath)}`
     })
 
+    // リージョン 1 件の読み込みは同期処理のため、進捗 IPC を送れるよう制御を返す
+    await new Promise<void>((resolve) => setImmediate(resolve))
+
     try {
       const region = await readRegion(mcaPath)
-      const dimension = inferDimension(worldPath, mcaPath)
-      const coords = parseRegionCoords(path.basename(mcaPath))
+      const dimension = entry.dimensionId
       // 破損チャンクの読み取りエラーを scan errors へ追加する
       for (const readError of region.readErrors) {
         // 破損チャンクの欠落を UI で認識できるように scan errors へ追加する
         errors.push(readError)
       }
 
-      let regionX = 0
-      let regionZ = 0
-      // リージョン座標が取得できた場合は補完に使う
-      if (coords !== null) {
-        regionX = coords.regionX
-        regionZ = coords.regionZ
-      }
-
       // リージョン内の各チャンクから Items コンテナを収集する
       for (const chunk of region.chunks.values()) {
-        const chunkCoords = resolveChunkCoordinates(chunk, regionX, regionZ)
+        const chunkCoords = resolveChunkCoordinates(chunk)
 
         const hits = findItemsHits(chunk.nbt)
         const chunkContainers = hitsToContainers(hits, {
@@ -189,7 +114,7 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
           regionFile: mcaPath,
           chunkX: chunkCoords.chunkX,
           chunkZ: chunkCoords.chunkZ
-        }, worldFormat)
+        })
 
         // チャンク内の各コンテナに binding を登録する
         for (const container of chunkContainers) {
@@ -234,15 +159,15 @@ export async function scanWorld(worldPath: string, onProgress?: ProgressCallback
 
   invokeOptional(onProgress, {
     phase: 'scan-finished',
-    current: mcaFiles.length,
-    total: mcaFiles.length,
+    current: regionEntries.length,
+    total: regionEntries.length,
     message: `Found ${mergedContainers.length} containers`
   })
 
   logger.info('scan', 'ワールド走査完了', {
     worldPath,
     durationMs: Date.now() - startedAt,
-    regionFileCount: mcaFiles.length,
+    regionFileCount: regionEntries.length,
     dataVersion: worldMetadata.dataVersion,
     containerCount: mergedContainers.length,
     largeChestCount: mergedContainers.filter((c) => c.largeChest).length,

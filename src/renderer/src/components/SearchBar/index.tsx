@@ -16,6 +16,8 @@ import {
 interface SearchBarProps {
   /** 適用済みの検索条件（検索ボタン押下後） */
   appliedFilter: SearchFilter
+  /** 選択できるディメンション ID（スキャン結果に実在するもの） */
+  dimensions: string[]
   /** 検索ボタン押下時に呼ばれる */
   onSearch: (filter: SearchFilter) => void
   disabled?: boolean
@@ -74,7 +76,7 @@ function parseOptionalCoordinate(raw: string): number | undefined {
  * @param onSearch - 検索実行コールバック
  * @param disabled - 操作中は true で入力不可
  */
-export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchBarProps): JSX.Element {
+export function SearchBar({ appliedFilter, dimensions, onSearch, disabled = false }: SearchBarProps): JSX.Element {
   const [draftFilter, setDraftFilter] = useState<SearchFilter>(appliedFilter)
 
   useEffect(() => {
@@ -113,9 +115,12 @@ export function SearchBar({ appliedFilter, onSearch, disabled = false }: SearchB
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">全ディメンション</SelectItem>
-              <SelectItem value="overworld">overworld</SelectItem>
-              <SelectItem value="nether">nether</SelectItem>
-              <SelectItem value="end">end</SelectItem>
+              {/* スキャン結果に実在する次元 ID を候補にする */}
+              {dimensions.map((dimension) => (
+                <SelectItem key={dimension} value={dimension}>
+                  {dimension}
+                </SelectItem>
+              ))}
             </SelectContent>
           </Select>
         </div>

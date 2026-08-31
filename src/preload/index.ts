@@ -39,6 +39,8 @@ const api: WorldChestAPI = {
     }
   },
   getContainers: (filter) => ipcRenderer.invoke('world:get-containers', filter),
+  parseItemSnbt: (snbt) => ipcRenderer.invoke('world:parse-item-snbt', snbt),
+  buildEmptySlotSnbt: (slot) => ipcRenderer.invoke('world:build-empty-slot-snbt', slot),
   updateSlot: (update) => ipcRenderer.invoke('world:update-slot', update),
   moveSlot: (move) => ipcRenderer.invoke('world:move-slot', move),
   saveChanges: () => ipcRenderer.invoke('world:save'),

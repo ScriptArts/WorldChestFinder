@@ -1,10 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { MinecraftIds } from '../../../../shared/minecraftIds'
-import { getInt, getString } from '../../../../shared/nbt/nbtAccess'
-import { buildItemSnbt, SnbtParseError, snbtToCompound } from '../../../../shared/nbt/SnbtCodec'
-import type { NbtCompound } from '../../../../shared/nbt/nbtTypes'
-import type { ContainerRecord, ItemStackView } from '../../../../shared/types'
-import { readItemCount, type WorldFormat } from '../../../../shared/world/WorldFormat'
+import type { ContainerRecord, ItemSnbtParseResult, ItemStackView } from '../../../../shared/types'
+import type { WorldFormat } from '../../../../shared/world/WorldFormat'
 import { Button } from '../ui/button'
 import { JsonCodeEditor } from '../ui/json-code-editor'
 import { Label } from '../ui/label'
@@ -41,36 +37,17 @@ function targetsMatch(current: EditorTarget | null, expected: EditorTarget): boo
   return false
 }
 
-function parseTargetSlot(compound: NbtCompound, fallback: number, slotCount: number): number | null {
+function parseTargetSlot(parsed: ItemSnbtParseResult, fallback: number, slotCount: number): number | null {
   let candidate = fallback
-  const slotValue = getInt(compound, 'Slot')
-  // NBT に Slot が数値で指定されていればそれを優先する
-  if (slotValue !== undefined) {
-    candidate = slotValue
+  // SNBT に Slot が数値で指定されていればそれを優先する
+  if (parsed.slot !== null) {
+    candidate = parsed.slot
   }
   // スロット番号が範囲外なら無効
   if (!Number.isInteger(candidate) || candidate < 0 || candidate >= slotCount) {
     return null
   }
   return candidate
-}
-
-function parseItemId(compound: NbtCompound): string | null {
-  const itemId = getString(compound, 'id')
-  // id が空文字列でなければ有効
-  if (itemId === undefined || itemId.trim() === '') {
-    return null
-  }
-  return itemId
-}
-
-function parseItemCount(compound: NbtCompound, worldFormat: WorldFormat): number | null {
-  const value = readItemCount(compound, worldFormat)
-  // 個数は 0 以上の整数である必要がある
-  if (Number.isNaN(value) || !Number.isInteger(value)) {
-    return null
-  }
-  return value
 }
 
 /**
@@ -97,17 +74,32 @@ export function SlotEditor({ container, slot, worldFormat, onUpdated, onError, d
     activeTargetRef.current = { containerId: container.id, slot }
     const existing = container.items.find((entry) => entry.slot === slot)
 
-    let nextSnbt = '{}'
-    if (worldFormat !== null) {
-      nextSnbt = buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0, worldFormat.usesLegacyItemCount)
-    }
-    // 既存アイテムがあればその SNBT をエディタへ読み込む
+    // 既存アイテムがあればその SNBT をそのままエディタへ読み込む
     if (existing !== undefined) {
-      nextSnbt = existing.raw
+      setNbtSnbt(existing.raw)
+      return
     }
 
-    setNbtSnbt(nextSnbt)
-  }, [container, slot, worldFormat])
+    // 空スロットのテンプレートは main プロセス（SpringNBTLibrary）に生成させる
+    let cancelled = false
+    setNbtSnbt('{}')
+    window.worldChest
+      .buildEmptySlotSnbt(slot)
+      .then((template) => {
+        // 取得中に別スロットへ切り替わっていた場合は反映しない
+        if (cancelled) {
+          return
+        }
+        setNbtSnbt(template)
+      })
+      .catch(() => {
+        // テンプレートを取得できない場合は空の compound を表示したままにする
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [container, slot])
 
   // コンテナまたはスロット未選択、またはワールド形式不明時は案内を表示する
   if (!container || slot === null || worldFormat === null) {
@@ -156,35 +148,37 @@ export function SlotEditor({ container, slot, worldFormat, onUpdated, onError, d
   }
 
   async function apply(): Promise<void> {
-    try {
-      const compound = snbtToCompound(nbtSnbt.trim())
-      const targetSlot = parseTargetSlot(compound, slot, container.slotCount)
-      // スロット番号が不正ならエラーを表示する
-      if (targetSlot === null) {
-        onError(`Slot は 0 〜 ${container.slotCount - 1} の整数で指定してください`)
-        return
-      }
-      const itemId = parseItemId(compound)
-      // id が不正ならエラーを表示する
-      if (itemId === null) {
-        onError('id は空でない文字列で指定してください')
-        return
-      }
-      const count = parseItemCount(compound, worldFormat)
-      // 個数が不正ならエラーを表示する
-      if (count === null || count < 0 || count > 64) {
-        onError('count または Count は 0 〜 64 の整数で指定してください')
-        return
-      }
-      await applyItem(itemFromSnbt(targetSlot, itemId, count, nbtSnbt.trim()))
-    } catch (error) {
-      // SNBT パース失敗時は専用メッセージを表示する
-      if (error instanceof SnbtParseError) {
-        onError(`NBT SNBT の形式が正しくありません: ${error.message}`)
+    const snbtText = nbtSnbt.trim()
+    // SNBT の解析は main プロセス（SpringNBTLibrary）へ委ねる
+    const parsed = await window.worldChest.parseItemSnbt(snbtText)
+    // 解析に失敗した場合はライブラリのメッセージを添えて通知する
+    if (!parsed.ok) {
+      // 失敗理由が取得できた場合はメッセージへ含める
+      if (parsed.message !== null) {
+        onError(`NBT SNBT の形式が正しくありません: ${parsed.message}`)
         return
       }
       onError('NBT SNBT の形式が正しくありません')
+      return
     }
+
+    const targetSlot = parseTargetSlot(parsed, slot, container.slotCount)
+    // スロット番号が不正ならエラーを表示する
+    if (targetSlot === null) {
+      onError(`Slot は 0 〜 ${container.slotCount - 1} の整数で指定してください`)
+      return
+    }
+    // id が不正ならエラーを表示する
+    if (parsed.itemId === null) {
+      onError('id は空でない文字列で指定してください')
+      return
+    }
+    // 個数が不正ならエラーを表示する
+    if (!Number.isInteger(parsed.count) || parsed.count < 0 || parsed.count > 64) {
+      onError('count または Count は 0 〜 64 の整数で指定してください')
+      return
+    }
+    await applyItem(itemFromSnbt(targetSlot, parsed.itemId, parsed.count, snbtText))
   }
 
   const editorDisabled = disabled || isApplying

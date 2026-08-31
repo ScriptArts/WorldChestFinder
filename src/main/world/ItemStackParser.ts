@@ -1,10 +1,8 @@
 import { MinecraftIds } from '../../shared/minecraftIds'
-import { buildItemSnbt, compoundToSnbt } from '../../shared/nbt/SnbtCodec'
 import type { ItemStackView } from '../../shared/types'
-import { readItemCount, type WorldFormat } from '../../shared/world/WorldFormat'
 import { coalesce } from '../../shared/valueUtils'
-import type { NbtCompound } from './nbtUtils'
-import { getCompoundField, getInt, getString } from './nbtUtils'
+import { buildItemSnbt, compoundToSnbt } from '../nbt/SnbtCodec'
+import { getCompound, getInt, getString, type NbtCompound } from './nbtUtils'
 
 const CONTAINER_SLOTS: Record<string, number> = {
   [MinecraftIds.BLOCK_CHEST]: 27,
@@ -17,11 +15,28 @@ const CONTAINER_SLOTS: Record<string, number> = {
   [MinecraftIds.BLOCK_BREWING_STAND]: 5
 }
 
-function summarizeComponents(components: NbtCompound | undefined): string {
-  // components タグが無い場合は空文字を返す
-  if (!components) {
-    return ''
+/**
+ * item compound から個数を読み取る。
+ *
+ * @param compound - item NBT
+ * @returns 個数（読み取れない場合は 0）
+ * @remarks 26.x の `count` (int) を優先し、古い `Count` が残っている場合はそれで代用する。
+ */
+export function readItemCount(compound: NbtCompound): number {
+  const count = getInt(compound, 'count')
+  // count があればそれを個数とする
+  if (count !== undefined) {
+    return count
   }
+  const legacyCount = getInt(compound, 'Count')
+  // count が無い場合だけ Count で代用する
+  if (legacyCount !== undefined) {
+    return legacyCount
+  }
+  return 0
+}
+
+function summarizeComponents(components: NbtCompound): string {
   const customName = getString(components, MinecraftIds.COMPONENT_CUSTOM_NAME)
   // カスタム名があれば表示要約として返す
   if (customName) {
@@ -35,15 +50,11 @@ function summarizeComponents(components: NbtCompound | undefined): string {
   return ''
 }
 
-function summarizeLegacyTag(tag: NbtCompound | undefined): string {
-  // tag タグが無い場合は空文字を返す
-  if (!tag) {
-    return ''
-  }
-  const displayField = getCompoundField(tag, 'display')
+function summarizeLegacyTag(tag: NbtCompound): string {
+  const display = getCompound(tag, 'display')
   // display compound がある場合は Name を参照する
-  if (displayField && displayField.type === 'compound') {
-    const name = getString(displayField.value as NbtCompound, 'Name')
+  if (display !== undefined) {
+    const name = getString(display, 'Name')
     // 表示名があれば返す
     if (name) {
       return name
@@ -53,33 +64,27 @@ function summarizeLegacyTag(tag: NbtCompound | undefined): string {
 }
 
 function summarizeDisplay(compound: NbtCompound): string {
-  const componentsField = getCompoundField(compound, 'components')
+  const components = getCompound(compound, 'components')
   // 1.20.5+ の components 形式から表示用要約を作る
-  if (componentsField && componentsField.type === 'compound') {
-    return summarizeComponents(componentsField.value as NbtCompound)
+  if (components !== undefined) {
+    return summarizeComponents(components)
   }
 
-  const tagField = getCompoundField(compound, 'tag')
+  const tag = getCompound(compound, 'tag')
   // legacy の tag.display 形式から表示用要約を作る
-  if (tagField && tagField.type === 'compound') {
-    return summarizeLegacyTag(tagField.value as NbtCompound)
+  if (tag !== undefined) {
+    return summarizeLegacyTag(tag)
   }
 
   return ''
 }
 
-function buildItemRawSnbt(
-  compound: NbtCompound,
-  slot: number,
-  itemId: string,
-  count: number,
-  worldFormat: WorldFormat
-): string {
+function buildItemRawSnbt(compound: NbtCompound, slot: number, itemId: string, count: number): string {
   try {
     return compoundToSnbt(compound, { pretty: true })
   } catch {
     // SNBT 変換に失敗した場合は最低限のフィールドだけ返しスキャンを継続する
-    return buildItemSnbt(slot, itemId, count, worldFormat.usesLegacyItemCount)
+    return buildItemSnbt(slot, itemId, count)
   }
 }
 
@@ -88,20 +93,19 @@ function buildItemRawSnbt(
  *
  * @param compound - アイテム NBT
  * @param fallbackSlot - Slot フィールドが無い場合の番号
- * @param worldFormat - ワールド形式
  * @returns パース結果
  */
-export function parseItemStack(compound: NbtCompound, fallbackSlot: number, worldFormat: WorldFormat): ItemStackView {
+export function parseItemStack(compound: NbtCompound, fallbackSlot: number): ItemStackView {
   const slot = coalesce(getInt(compound, 'Slot'), fallbackSlot)
   const itemId = coalesce(getString(compound, 'id'), MinecraftIds.ITEM_AIR)
-  const count = readItemCount(compound, worldFormat)
+  const count = readItemCount(compound)
 
   return {
     slot,
     itemId,
     count,
     displaySummary: summarizeDisplay(compound),
-    raw: buildItemRawSnbt(compound, slot, itemId, count, worldFormat)
+    raw: buildItemRawSnbt(compound, slot, itemId, count)
   }
 }
 
@@ -109,14 +113,13 @@ export function parseItemStack(compound: NbtCompound, fallbackSlot: number, worl
  * Items compound 配列を ItemStackView 一覧に変換する。
  *
  * @param items - NBT compound 配列
- * @param worldFormat - ワールド形式
  * @returns スロット番号順にソート済み
  */
-export function parseItemsList(items: NbtCompound[], worldFormat: WorldFormat): ItemStackView[] {
+export function parseItemsList(items: NbtCompound[]): ItemStackView[] {
   const parsed: ItemStackView[] = []
   // 各エントリを ItemStackView に変換する
   for (let index = 0; index < items.length; index += 1) {
-    parsed.push(parseItemStack(items[index], index, worldFormat))
+    parsed.push(parseItemStack(items[index], index))
   }
   return parsed.sort((a, b) => a.slot - b.slot)
 }
@@ -145,8 +148,7 @@ export function inferSlotCount(blockEntityId: string, items: ItemStackView[]): n
  * 空スロット用の SNBT 文字列を生成する。
  *
  * @param slot - スロット番号
- * @param usesLegacyItemCount - 空 SNBT テンプレートで Count (byte) を使う場合 true
  */
-export function buildEmptySlot(slot: number, usesLegacyItemCount: boolean): string {
-  return buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0, usesLegacyItemCount)
+export function buildEmptySlot(slot: number): string {
+  return buildItemSnbt(slot, MinecraftIds.ITEM_AIR, 0)
 }

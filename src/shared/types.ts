@@ -157,6 +157,20 @@ export interface SlotUpdate {
   item: ItemStackView | null
 }
 
+/** SlotEditor の SNBT を main プロセスで解析した結果 */
+export interface ItemSnbtParseResult {
+  /** 解析に成功した場合 true */
+  ok: boolean
+  /** SNBT に Slot が指定されていた場合のスロット番号 */
+  slot: number | null
+  /** SNBT の id（未指定または空文字の場合は null） */
+  itemId: string | null
+  /** ワールド形式に応じて読み取った個数 */
+  count: number
+  /** 解析に失敗した場合の理由 */
+  message: string | null
+}
+
 /** スロット間の移動リクエスト */
 export interface SlotMove {
   containerId: string
@@ -174,6 +188,8 @@ export interface WorldChestAPI {
   getAssetsStatus(): Promise<AssetsStatus>
   onAssetDownloadProgress(callback: (progress: AssetDownloadProgress) => void): () => void
   getContainers(filter?: SearchFilter): Promise<ContainerRecord[]>
+  parseItemSnbt(snbt: string): Promise<ItemSnbtParseResult>
+  buildEmptySlotSnbt(slot: number): Promise<string>
   updateSlot(update: SlotUpdate): Promise<ContainerRecord | null>
   moveSlot(move: SlotMove): Promise<ContainerRecord | null>
   saveChanges(): Promise<SaveReport>

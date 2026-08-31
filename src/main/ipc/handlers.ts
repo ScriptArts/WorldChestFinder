@@ -8,6 +8,7 @@ import {
   type AssetDownloadProgress
 } from '../assets/ResourcePackManager'
 import { resolveItemTexture } from '../assets/ItemTextureResolver'
+import { buildEmptySlot } from '../world/ItemStackParser'
 import { registerLoggedIpcHandler } from '../logging/ipcLogging'
 import { logger } from '../logging/AppLogger'
 import type { SearchFilter, SaveProgress, SlotMove, SlotUpdate } from '../../shared/types'
@@ -132,6 +133,22 @@ export function registerIpcHandlers(): void {
 
   registerLoggedIpcHandler('world:get-containers', (_event, filter?: unknown) => {
     return session.getContainers(filter as SearchFilter | undefined)
+  })
+
+  registerLoggedIpcHandler('world:parse-item-snbt', async (_event, snbt: unknown) => {
+    // 文字列以外の SNBT は解析対象にしない
+    if (typeof snbt !== 'string') {
+      throw new Error('SNBT が正しくありません。')
+    }
+    return session.parseItemSnbt(snbt)
+  })
+
+  registerLoggedIpcHandler('world:build-empty-slot-snbt', async (_event, slot: unknown) => {
+    // 整数以外のスロット番号はテンプレート生成の対象にしない
+    if (typeof slot !== 'number' || !Number.isInteger(slot)) {
+      throw new Error('スロット番号が正しくありません。')
+    }
+    return buildEmptySlot(slot)
   })
 
   registerLoggedIpcHandler('world:update-slot', async (_event, update: unknown) => {

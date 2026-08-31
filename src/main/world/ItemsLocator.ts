@@ -1,9 +1,7 @@
 import { randomUUID } from 'crypto'
 import type { ContainerRecord, SourceType } from '../../shared/types'
-import type { WorldFormat } from '../../shared/world/WorldFormat'
 import { coalesce } from '../../shared/valueUtils'
-import type { NbtCompound } from './nbtUtils'
-import { getCompoundFieldFirst, getIntFirst, getListItems, getString, isList } from './nbtUtils'
+import { getIntFirst, getList, getListItems, getNumberListValues, getString, type NbtCompound } from './nbtUtils'
 import { inferSlotCount, parseItemsList } from './ItemStackParser'
 
 /** チャンク NBT 内で Items タグを検出した結果 */
@@ -20,7 +18,15 @@ const SOURCE_LISTS: Array<{ key: string; sourceType: SourceType }> = [
   { key: 'TileEntities', sourceType: 'block_entity' }
 ]
 
-function extractPosition(compound: NbtCompound): { x: number; y: number; z: number } | null {
+const POSITION_LIST_KEYS = ['Pos', 'pos', 'Position']
+
+/**
+ * Block Entity / Entity の NBT からブロック座標を抽出する。
+ *
+ * @param compound - 対象 compound
+ * @returns ワールド座標。取得できない場合は null
+ */
+export function extractPosition(compound: NbtCompound): { x: number; y: number; z: number } | null {
   const x = getIntFirst(compound, 'x', 'X')
   const y = getIntFirst(compound, 'y', 'Y')
   const z = getIntFirst(compound, 'z', 'Z')
@@ -30,10 +36,9 @@ function extractPosition(compound: NbtCompound): { x: number; y: number; z: numb
     return { x, y, z }
   }
 
-  const posField = getCompoundFieldFirst(compound, 'Pos', 'pos', 'Position')
   // Pos リストから座標を復元する
-  if (posField && posField.type === 'list') {
-    const values = (posField.value as { value: number[] }).value
+  for (const key of POSITION_LIST_KEYS) {
+    const values = getNumberListValues(compound, key)
     // 3 要素以上あれば XYZ 座標として採用する
     if (values.length >= 3) {
       return {
@@ -58,19 +63,13 @@ export function findItemsHits(chunkNbt: NbtCompound): ItemsHit[] {
 
   // Entities / block_entities / TileEntities を順に走査する
   for (const source of SOURCE_LISTS) {
-    const listField = getCompoundFieldFirst(chunkNbt, source.key)
-    // 対象リストが存在しない、または list 型でない場合はスキップする
-    if (!listField || !isList(listField)) {
-      continue
-    }
-
     const entries = getListItems(chunkNbt, source.key)
     // 各エントリから Items タグを持つ compound を探す
     for (let index = 0; index < entries.length; index += 1) {
       const compound = entries[index]
-      const itemsField = getCompoundFieldFirst(compound, 'Items')
+      const itemsList = getList(compound, 'Items')
       // Items タグが無い、または list 型でない場合はスキップする
-      if (!itemsField || !isList(itemsField)) {
+      if (itemsList === undefined) {
         continue
       }
 
@@ -100,14 +99,13 @@ export function hitsToContainers(
     regionFile: string
     chunkX: number
     chunkZ: number
-  },
-  worldFormat: WorldFormat
+  }
 ): ContainerRecord[] {
   const containers: ContainerRecord[] = []
   // 各 ItemsHit を ContainerRecord に変換する
   for (const hit of hits) {
     const blockEntityId = coalesce(getString(hit.ownerCompound, 'id'), 'unknown')
-    const items = parseItemsList(getListItems(hit.ownerCompound, 'Items'), worldFormat)
+    const items = parseItemsList(getListItems(hit.ownerCompound, 'Items'))
     const position = extractPosition(hit.ownerCompound)
     let posX = 0
     let posY = 0

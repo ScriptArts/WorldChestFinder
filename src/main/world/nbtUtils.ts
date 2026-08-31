@@ -1,14 +1,19 @@
-import type { NbtCompound, NbtTag } from '../../shared/nbt/nbtTypes'
+import { NbtCompound, NbtList, TagType, type NbtTag } from 'spring-nbt-library/nbt'
 
-export type { NbtCompound, NbtTag } from '../../shared/nbt/nbtTypes'
+export { NbtCompound, NbtList, TagType } from 'spring-nbt-library/nbt'
+export type { NbtTag } from 'spring-nbt-library/nbt'
 
 /**
  * 値が compound 型 NBT タグか判定する。
  *
  * @param tag - 判定対象
  */
-export function isCompound(tag: unknown): tag is NbtTag & { value: NbtCompound } {
-  return typeof tag === 'object' && tag !== null && (tag as NbtTag).type === 'compound'
+export function isCompound(tag: NbtTag | undefined): tag is NbtCompound {
+  // タグが存在し compound 型なら true を返す
+  if (tag !== undefined && tag.type === TagType.Compound) {
+    return true
+  }
+  return false
 }
 
 /**
@@ -16,36 +21,12 @@ export function isCompound(tag: unknown): tag is NbtTag & { value: NbtCompound }
  *
  * @param tag - 判定対象
  */
-export function isList(tag: unknown): tag is NbtTag & { value: { type: string; value: unknown[] } } {
-  return typeof tag === 'object' && tag !== null && (tag as NbtTag).type === 'list'
-}
-
-/** list エントリまたは plain object を compound に変換する */
-function asCompound(value: unknown): NbtCompound | null {
-  // NBT compound タグなら value を返す
-  if (isCompound(value)) {
-    return value.value
+function isList(tag: NbtTag | undefined): tag is NbtList {
+  // タグが存在し list 型なら true を返す
+  if (tag !== undefined && tag.type === TagType.List) {
+    return true
   }
-  // plain object ならそのまま compound として扱う
-  if (typeof value === 'object' && value !== null && !Array.isArray(value) && !('type' in value)) {
-    return value as NbtCompound
-  }
-  return null
-}
-
-/**
- * compound から指定キーのフィールドを取得する。
- *
- * @param compound - 対象 compound
- * @param key - フィールド名
- */
-export function getCompoundField(compound: NbtCompound, key: string): NbtTag | undefined {
-  const field = compound[key]
-  // フィールドが存在しない場合は undefined を返す
-  if (!field) {
-    return undefined
-  }
-  return field
+  return false
 }
 
 /**
@@ -53,14 +34,15 @@ export function getCompoundField(compound: NbtCompound, key: string): NbtTag | u
  *
  * @param compound - 対象 compound
  * @param key - フィールド名
+ * @returns 文字列。string 型でない場合は undefined
  */
 export function getString(compound: NbtCompound, key: string): string | undefined {
-  const field = getCompoundField(compound, key)
+  const tag = compound.opt(key)
   // string 型でない場合は undefined を返す
-  if (!field || field.type !== 'string') {
+  if (tag === undefined || tag.type !== TagType.String) {
     return undefined
   }
-  return String(field.value)
+  return tag.value
 }
 
 /**
@@ -68,16 +50,17 @@ export function getString(compound: NbtCompound, key: string): string | undefine
  *
  * @param compound - 対象 compound
  * @param key - フィールド名
+ * @returns 数値。整数型でない場合は undefined
  */
 export function getInt(compound: NbtCompound, key: string): number | undefined {
-  const field = getCompoundField(compound, key)
+  const tag = compound.opt(key)
   // フィールドが存在しない場合は undefined を返す
-  if (!field) {
+  if (tag === undefined) {
     return undefined
   }
-  // 整数型タグなら数値として返す
-  if (field.type === 'int' || field.type === 'short' || field.type === 'byte') {
-    return Number(field.value)
+  // int / short / byte はいずれも数値として返す
+  if (tag.type === TagType.Int || tag.type === TagType.Short || tag.type === TagType.Byte) {
+    return tag.value
   }
   return undefined
 }
@@ -87,6 +70,7 @@ export function getInt(compound: NbtCompound, key: string): number | undefined {
  *
  * @param compound - 対象 compound
  * @param keys - 試行するキー名（例: 'x', 'X'）
+ * @returns 数値。いずれも取得できない場合は undefined
  */
 export function getIntFirst(compound: NbtCompound, ...keys: string[]): number | undefined {
   // 各キーを順に試して最初の整数値を返す
@@ -101,53 +85,87 @@ export function getIntFirst(compound: NbtCompound, ...keys: string[]): number | 
 }
 
 /**
- * 複数キーを順に試し、最初に見つかった compound フィールドを返す。
+ * compound から compound フィールドを取得する。
  *
  * @param compound - 対象 compound
- * @param keys - 試行するキー名
+ * @param key - フィールド名
+ * @returns compound。compound 型でない場合は undefined
  */
-export function getCompoundFieldFirst(compound: NbtCompound, ...keys: string[]): NbtTag | undefined {
-  // 各キーを順に試して最初のフィールドを返す
-  for (const key of keys) {
-    const field = getCompoundField(compound, key)
-    // フィールドが見つかった場合は返す
-    if (field !== undefined) {
-      return field
-    }
+export function getCompound(compound: NbtCompound, key: string): NbtCompound | undefined {
+  const tag = compound.opt(key)
+  // compound 型でない場合は undefined を返す
+  if (!isCompound(tag)) {
+    return undefined
   }
-  return undefined
+  return tag
 }
 
 /**
- * list 型フィールドの compound エントリ一覧を取得する。
+ * compound から list フィールドを取得する。
+ *
+ * @param compound - 対象 compound
+ * @param key - フィールド名
+ * @returns list。list 型でない場合は undefined
+ */
+export function getList(compound: NbtCompound, key: string): NbtList | undefined {
+  const tag = compound.opt(key)
+  // list 型でない場合は undefined を返す
+  if (!isList(tag)) {
+    return undefined
+  }
+  return tag
+}
+
+/**
+ * list 型フィールドの compound 要素一覧を取得する。
  *
  * @param compound - 親 compound
  * @param key - list フィールド名
- * @returns compound エントリ配列（list でない場合は空配列）
+ * @returns compound 要素の配列（list でない場合は空配列）
  */
 export function getListItems(compound: NbtCompound, key: string): NbtCompound[] {
-  const field = getCompoundField(compound, key)
+  const list = getList(compound, key)
   // list 型でない場合は空配列を返す
-  if (!field || !isList(field)) {
+  if (list === undefined) {
     return []
   }
   const items: NbtCompound[] = []
-  // list 内の各エントリを compound に正規化する
-  for (const entry of field.value.value) {
-    const compoundEntry = asCompound(entry)
-    // compound に変換できたエントリだけ結果へ追加する
-    if (compoundEntry) {
-      items.push(compoundEntry)
+  // list 内の compound 要素だけを結果へ集める
+  for (const entry of list) {
+    // compound 要素だけを対象にする
+    if (isCompound(entry)) {
+      items.push(entry)
     }
   }
   return items
 }
 
 /**
- * prismarine-nbt の parse 結果からチャンクルート compound を取り出す。
+ * list 型フィールドの数値要素を配列で取得する（Pos などの座標リスト用）。
  *
- * @param parsed - nbt.parse の戻り値
+ * @param compound - 親 compound
+ * @param key - list フィールド名
+ * @returns 数値の配列（数値以外の要素はスキップする）
  */
-export function getChunkRoot(parsed: { parsed: { value: NbtCompound } }): NbtCompound {
-  return parsed.parsed.value
+export function getNumberListValues(compound: NbtCompound, key: string): number[] {
+  const list = getList(compound, key)
+  // list 型でない場合は空配列を返す
+  if (list === undefined) {
+    return []
+  }
+  const values: number[] = []
+  // list 内の数値要素だけを結果へ集める
+  for (const entry of list) {
+    // double / float / int / short / byte を数値として扱う
+    if (
+      entry.type === TagType.Double ||
+      entry.type === TagType.Float ||
+      entry.type === TagType.Int ||
+      entry.type === TagType.Short ||
+      entry.type === TagType.Byte
+    ) {
+      values.push(entry.value)
+    }
+  }
+  return values
 }

@@ -1,12 +1,3 @@
-import { getInt } from '../nbt/nbtAccess'
-import type { NbtCompound } from '../nbt/nbtTypes'
-
-/** 1.18 以降の Anvil チャンク形式の最小 DataVersion */
-export const DATA_VERSION_JAVA_1_18 = 2860
-
-/** 1.20.5 以降の item 個数フィールド（`count`）を使う DataVersion */
-export const DATA_VERSION_JAVA_1_20_5 = 3837
-
 /** level.dat から取得したワールドメタデータ */
 export interface WorldMetadata {
   /** ワールド表示名 */
@@ -27,30 +18,37 @@ export interface WorldFormat {
   dataVersion: number
   /** UI 表示用バージョンラベル */
   versionLabel: string
-  /** GUI 表示で Count (byte) を優先する場合 true */
-  usesLegacyItemCount: boolean
   /** WorldChestFinder がサポートする形式か */
   supported: boolean
 }
 
 /**
- * level.dat の内容から WorldMetadata を組み立てる。
+ * level.dat と次元構成から WorldMetadata を組み立てる。
  *
  * @param dataVersion - DataVersion 値
- * @param versionName - Version.Name（省略可）
+ * @param versionName - Version.Name（無い場合は null）
  * @param levelName - LevelName
+ * @param hasVanillaOverworld - `dimensions/minecraft/overworld/` が存在する場合 true
+ * @returns ワールドメタデータ
+ * @remarks
+ * 本ソフトウェアは Minecraft Java版 26.x のワールド構成にのみ対応する。
+ * 26.x では標準の 3 次元も `dimensions/<名前空間>/<パス>/` の下に並ぶため、
+ * `dimensions/minecraft/overworld/` の有無で新旧構成を判定する
+ * （旧構成の `region/` や、データパック次元だけを持つ 1.21 以前のワールドを取り違えないため）。
  */
 export function buildWorldMetadata(
   dataVersion: number,
   versionName: string | null,
-  levelName: string
+  levelName: string,
+  hasVanillaOverworld: boolean
 ): WorldMetadata {
   let supported = true
   let supportMessage: string | null = null
-  // 1.18 未満の DataVersion は現行 Anvil チャンク形式非対応とみなす
-  if (dataVersion < DATA_VERSION_JAVA_1_18) {
+  // オーバーワールドが dimensions 配下に無いワールドは 26.x 以降の構成ではない
+  if (!hasVanillaOverworld) {
     supported = false
-    supportMessage = `DataVersion ${dataVersion} は Minecraft Java Edition 1.18 未満のワールド形式です（対応最小 DataVersion: ${DATA_VERSION_JAVA_1_18}）`
+    supportMessage =
+      'dimensions/minecraft/overworld/ が見つかりません。本ソフトウェアは Minecraft Java Edition 26.x 以降のワールド構成にのみ対応しています'
   }
   return {
     levelName,
@@ -68,49 +66,14 @@ export function buildWorldMetadata(
  */
 export function createWorldFormat(metadata: WorldMetadata): WorldFormat {
   let versionLabel = metadata.versionName
+  // Version.Name が無いワールドは DataVersion をラベルにする
   if (versionLabel === null || versionLabel.trim() === '') {
     versionLabel = `DataVersion ${metadata.dataVersion}`
-  }
-
-  let usesLegacyItemCount = true
-  if (metadata.dataVersion >= DATA_VERSION_JAVA_1_20_5) {
-    usesLegacyItemCount = false
   }
 
   return {
     dataVersion: metadata.dataVersion,
     versionLabel,
-    usesLegacyItemCount,
     supported: metadata.supported
   }
 }
-
-/**
- * item compound から個数を読み取る。
- *
- * @param compound - item NBT
- * @param format - ワールド形式
- */
-export function readItemCount(compound: NbtCompound, format: WorldFormat): number {
-  const modernCount = getInt(compound, 'count')
-  const legacyCount = getInt(compound, 'Count')
-  // 1.20.4 以前は Count を優先する
-  if (format.usesLegacyItemCount) {
-    if (legacyCount !== undefined) {
-      return legacyCount
-    }
-    if (modernCount !== undefined) {
-      return modernCount
-    }
-    return 0
-  }
-  // 1.20.5 以降は count を優先する
-  if (modernCount !== undefined) {
-    return modernCount
-  }
-  if (legacyCount !== undefined) {
-    return legacyCount
-  }
-  return 0
-}
-

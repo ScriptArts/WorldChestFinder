@@ -1,46 +1,17 @@
-import type { ContainerRecord, ItemStackView, LargeChestHalf, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
-import type { WorldFormat } from '../shared/world/WorldFormat'
-import { replaceSlotInSnbt } from '../shared/nbt/SnbtCodec'
-import { invokeOptional } from '../shared/valueUtils'
+import type { ContainerRecord, ItemSnbtParseResult, ItemStackView, LargeChestHalf, SaveProgress, SaveReport, SaveStatus, ScanResult, SearchFilter, SlotMove, SlotUpdate } from '../shared/types'
+import { replaceSlotInSnbt, snbtToCompound } from './nbt/SnbtCodec'
+import { formatError, invokeOptional } from '../shared/valueUtils'
 import { logger } from './logging/AppLogger'
 import { filterContainers } from './search/SearchIndex'
 import { saveModifiedRegions, type SaveProgressCallback } from './world/SaveCoordinator'
 import { readRegion, type LoadedRegion } from './world/AnvilRegionReader'
-import { findItemsHits, hitsToContainers } from './world/ItemsLocator'
+import { extractPosition, findItemsHits, hitsToContainers } from './world/ItemsLocator'
 import { getHalfForSlot, toLocalSlot } from './world/LargeChestMerger'
 import { moveSlotInCompound, transferSlotItem } from './world/NbtEditor'
-import { getCompoundFieldFirst, getIntFirst } from './world/nbtUtils'
 import { toScanResult, type ScanSession, scanWorld, type ProgressCallback, type ContainerBinding } from './world/WorldScanner'
 import type { NbtCompound } from './world/nbtUtils'
-import { parseItemsList } from './world/ItemStackParser'
-import { getListItems } from './world/nbtUtils'
-
-/**
- * NBT compound からブロック座標を抽出する。
- *
- * @param compound - Block Entity / Entity の NBT
- * @returns ワールド座標。取得できない場合は null
- */
-function extractPosition(compound: NbtCompound): { x: number; y: number; z: number } | null {
-  const x = getIntFirst(compound, 'x', 'X')
-  const y = getIntFirst(compound, 'y', 'Y')
-  const z = getIntFirst(compound, 'z', 'Z')
-  // 座標が直接入っている場合はそのまま返す
-  if (x !== undefined && y !== undefined && z !== undefined) {
-    return { x, y, z }
-  }
-
-  const posField = getCompoundFieldFirst(compound, 'Pos', 'pos', 'Position')
-  // Pos リストから座標を復元する
-  if (posField && posField.type === 'list') {
-    const values = (posField.value as { value: number[] }).value
-    // 3 要素以上あれば XYZ 座標として採用する
-    if (values.length >= 3) {
-      return { x: Math.floor(values[0]), y: Math.floor(values[1]), z: Math.floor(values[2]) }
-    }
-  }
-  return null
-}
+import { parseItemsList, readItemCount } from './world/ItemStackParser'
+import { getInt, getListItems, getString } from './world/nbtUtils'
 
 /**
  * コンテナに対応する Items タグの親 compound をセッションから解決する。
@@ -256,13 +227,6 @@ export class AppSession {
     return region
   }
 
-  private getWorldFormat(): WorldFormat | null {
-    if (!this.session) {
-      return null
-    }
-    return this.session.worldFormat
-  }
-
   private assertWorldWritable(): boolean {
     if (!this.session) {
       return false
@@ -297,10 +261,6 @@ export class AppSession {
     owner: NbtCompound,
     updatedItems: ItemStackView[]
   ): ContainerRecord {
-    const worldFormat = this.getWorldFormat()
-    if (worldFormat === null) {
-      return container
-    }
     const refreshed = hitsToContainers(
       [{ nbtPath: container.nbtPath, sourceType: container.sourceType, ownerCompound: owner, itemsPath: container.nbtPath }],
       {
@@ -308,8 +268,7 @@ export class AppSession {
         regionFile: container.regionFile,
         chunkX: container.chunkX,
         chunkZ: container.chunkZ
-      },
-      worldFormat
+      }
     )[0]
 
     let nextItems = updatedItems
@@ -353,6 +312,60 @@ export class AppSession {
   }
 
   /**
+   * SlotEditor で編集中の SNBT を解析し、画面側の検証に必要な値を返す。
+   *
+   * @param text - SNBT 文字列
+   * @returns 解析結果。失敗時は ok が false でメッセージを含む
+   * @remarks SNBT の解析は SpringNBTLibrary が行うため、renderer では解析しない。
+   */
+  parseItemSnbt(text: string): ItemSnbtParseResult {
+    // ワールド未読み込み時は個数フィールドの解釈を決められない
+    if (!this.session) {
+      return {
+        ok: false,
+        slot: null,
+        itemId: null,
+        count: 0,
+        message: 'ワールドが読み込まれていません。先にスキャンしてください。'
+      }
+    }
+
+    try {
+      const compound = snbtToCompound(text)
+
+      let slot: number | null = null
+      const slotValue = getInt(compound, 'Slot')
+      // Slot が整数で指定されている場合だけ移動先スロットとして返す
+      if (slotValue !== undefined) {
+        slot = slotValue
+      }
+
+      let itemId: string | null = null
+      const idValue = getString(compound, 'id')
+      // id が空でない文字列の場合だけ有効な ID として返す
+      if (idValue !== undefined && idValue.trim() !== '') {
+        itemId = idValue
+      }
+
+      return {
+        ok: true,
+        slot,
+        itemId,
+        count: readItemCount(compound),
+        message: null
+      }
+    } catch (error) {
+      return {
+        ok: false,
+        slot: null,
+        itemId: null,
+        count: 0,
+        message: formatError(error)
+      }
+    }
+  }
+
+  /**
    * 指定スロットのアイテム内容を更新する。
    *
    * @param update - 更新内容
@@ -363,7 +376,6 @@ export class AppSession {
       // セッション未初期化時は更新できない
       if (!this.session) return null
       if (!this.assertWorldWritable()) return null
-      const worldFormat = this.session.worldFormat
       const containerIndex = this.session.containers.findIndex((e) => e.id === update.containerId)
       // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
@@ -378,12 +390,12 @@ export class AppSession {
           if (update.item) {
             localItem = { ...update.item, slot: localSlot, raw: replaceSlotInSnbt(update.item.raw, localSlot) }
           }
-          return transferSlotItem(owner, localSlot, localItem, worldFormat)
+          return transferSlotItem(owner, localSlot, localItem)
         })
       }
 
       return this.mutateContainer(update.containerId, (owner) =>
-        transferSlotItem(owner, update.slot, update.item, worldFormat)
+        transferSlotItem(owner, update.slot, update.item)
       )
     })
   }
@@ -399,7 +411,6 @@ export class AppSession {
       // セッション未初期化時は移動できない
       if (!this.session) return null
       if (!this.assertWorldWritable()) return null
-      const worldFormat = this.session.worldFormat
       const containerIndex = this.session.containers.findIndex((e) => e.id === move.containerId)
       // 対象コンテナが見つからない場合は null を返す
       if (containerIndex < 0) return null
@@ -411,7 +422,7 @@ export class AppSession {
       }
 
       return this.mutateContainer(move.containerId, (owner) =>
-        moveSlotInCompound(owner, move.fromSlot, move.toSlot, worldFormat)
+        moveSlotInCompound(owner, move.fromSlot, move.toSlot)
       )
     })
   }
@@ -536,7 +547,7 @@ export class AppSession {
     // 同じ片側チェスト内の移動は単一 owner の更新で処理する
     if (fromSide === toSide) {
       return this.mutateLargeChest(containerIndex, fromSlot, (owner) =>
-        moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot), this.session!.worldFormat)
+        moveSlotInCompound(owner, toLocalSlot(fromSlot), toLocalSlot(toSlot))
       )
     }
 
@@ -569,32 +580,30 @@ export class AppSession {
       return null
     }
 
-    const worldFormat = this.session.worldFormat
-
     const localFrom = toLocalSlot(fromSlot)
     const localTo = toLocalSlot(toSlot)
 
-    const fromItems = parseItemsList(getListItems(fromOwner, 'Items'), worldFormat)
-    const toItems = parseItemsList(getListItems(toOwner, 'Items'), worldFormat)
+    const fromItems = parseItemsList(getListItems(fromOwner, 'Items'))
+    const toItems = parseItemsList(getListItems(toOwner, 'Items'))
     const fromItem = fromItems.find((i) => i.slot === localFrom) || null
     const toItem = toItems.find((i) => i.slot === localTo) || null
 
     // 両側の対象スロットをいったん空にする
     // （先に書き込むと、後段の削除が書き込んだアイテムを消してしまうため）
     if (fromItem) {
-      transferSlotItem(fromOwner, localFrom, null, worldFormat)
+      transferSlotItem(fromOwner, localFrom, null)
     }
     if (toItem) {
-      transferSlotItem(toOwner, localTo, null, worldFormat)
+      transferSlotItem(toOwner, localTo, null)
     }
     // 空にした両スロットへ入れ替えたアイテムを書き戻す
     if (fromItem) {
       const movedItem = { ...fromItem, slot: localTo, raw: replaceSlotInSnbt(fromItem.raw, localTo) }
-      transferSlotItem(toOwner, localTo, movedItem, worldFormat)
+      transferSlotItem(toOwner, localTo, movedItem)
     }
     if (toItem) {
       const movedBack = { ...toItem, slot: localFrom, raw: replaceSlotInSnbt(toItem.raw, localFrom) }
-      transferSlotItem(fromOwner, localFrom, movedBack, worldFormat)
+      transferSlotItem(fromOwner, localFrom, movedBack)
     }
 
     const fromBinding = findBindingForHalf(fromHalf, this.session)
@@ -621,7 +630,6 @@ export class AppSession {
     }
     const container = this.session.containers[containerIndex]
     const pair = container.largeChest!
-    const worldFormat = this.session.worldFormat
 
     const primaryOwner = resolveOwnerForHalf(pair.primary, this.session)
     const secondaryOwner = resolveOwnerForHalf(pair.secondary, this.session)
@@ -629,7 +637,7 @@ export class AppSession {
     let primaryItems: ItemStackView[]
     // primary owner が見つかった場合だけ Items を読み直す
     if (primaryOwner) {
-      primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'), worldFormat)
+      primaryItems = parseItemsList(getListItems(primaryOwner, 'Items'))
     // primary owner が見つからない場合は空配列とする
     } else {
       primaryItems = []
@@ -638,7 +646,7 @@ export class AppSession {
     let secondaryItems: ItemStackView[]
     // secondary owner が見つかった場合だけ Items を読み直す
     if (secondaryOwner) {
-      secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'), worldFormat)
+      secondaryItems = parseItemsList(getListItems(secondaryOwner, 'Items'))
     // secondary owner が見つからない場合は空配列とする
     } else {
       secondaryItems = []
